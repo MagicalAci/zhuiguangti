@@ -50,15 +50,19 @@ export const GROUP_STAGES: StageInfo[] = [
 export const getStageIndex = (stage: GroupStage): number =>
   GROUP_STAGES.findIndex((s) => s.stage === stage);
 
-/** V1 demo · 团状态五态归一化 */
+/** V1 demo · 团状态归一化（区分定金/全款两条路径） */
 export type CanonicalGroupStage =
   | 'gathering'
   | 'deposit_collecting'
   | 'final_collecting'
+  | 'full_collecting'
   | 'shipping'
   | 'closed';
 
-export function canonicalGroupStage(stage: GroupStage): CanonicalGroupStage {
+export function canonicalGroupStage(
+  stage: GroupStage,
+  payMode?: 'deposit' | 'full',
+): CanonicalGroupStage {
   switch (stage) {
     case 'preparing':
     case 'gathering':
@@ -66,8 +70,9 @@ export function canonicalGroupStage(stage: GroupStage): CanonicalGroupStage {
     case 'recruiting':
       return 'gathering';
     case 'deposit_collecting':
-    case 'full_collecting':
       return 'deposit_collecting';
+    case 'full_collecting':
+      return 'full_collecting';
     case 'final_collecting':
     case 'purchasing':
     case 'producing':
@@ -89,10 +94,11 @@ export const CANONICAL_STAGE_META: Record<
   CanonicalGroupStage,
   { label: string; color: string; bg: string; icon: string; hint: string }
 > = {
-  gathering:           { label: '凑车中', color: '#10B981', bg: '#ECFDF5', icon: 'people-outline',   hint: '团长还在凑人 · 你可以继续修改 / 加购订单' },
-  deposit_collecting:  { label: '收定金', color: '#F59E0B', bg: '#FFFBEB', icon: 'card-outline',     hint: '团长已发起收款 · 请在倒计时内付完保留排位' },
-  final_collecting:    { label: '收尾款', color: '#F97316', bg: '#FFF7ED', icon: 'wallet-outline',   hint: '团长已发起补尾款 · 补齐后等待到货发货' },
-  shipping:            { label: '发货中', color: '#3B82F6', bg: '#EFF6FF', icon: 'cube-outline',     hint: '货已到手 · 团长可能根据真实邮费发起补邮' },
+  gathering:           { label: '凑车中', color: '#10B981', bg: '#ECFDF5', icon: 'people-outline',      hint: '团长还在凑人 · 你可以继续修改 / 加购订单' },
+  deposit_collecting:  { label: '收定金', color: '#F59E0B', bg: '#FFFBEB', icon: 'card-outline',        hint: '团长已发起收款 · 请在倒计时内付完保留排位' },
+  final_collecting:    { label: '收尾款', color: '#F97316', bg: '#FFF7ED', icon: 'wallet-outline',      hint: '团长已发起补尾款 · 补齐后等待到货发货' },
+  full_collecting:     { label: '收款中', color: '#F43F5E', bg: '#FFF1F2', icon: 'card-outline',        hint: '团长已发起收款 · 请在倒计时内付完保留排位' },
+  shipping:            { label: '发货中', color: '#3B82F6', bg: '#EFF6FF', icon: 'cube-outline',        hint: '货已到手 · 团长可能根据真实邮费发起补邮' },
   closed:              { label: '已截团', color: '#7C3AED', bg: '#F5F3FF', icon: 'lock-closed-outline', hint: '本团已结束 · 不再接单 / 不再补款' },
 };
 

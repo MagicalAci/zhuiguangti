@@ -148,6 +148,9 @@ export interface Member {
   id: string;
   nickname: string;
   avatar?: string;
+  city?: string;
+  address?: string;
+  note?: string;
   creditScore: number;
   totalOrders: number;
   completedOrders: number;

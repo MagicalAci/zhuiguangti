@@ -8,15 +8,13 @@ import { usePrefs } from '../../store/usePrefs';
 
 interface Props {
   name: string; setName: (v: string) => void;
+  /** 团描述（合并了原下单/退换规则的内容,既是介绍又是给团员看的承诺） */
   desc: string; setDesc: (v: string) => void;
   detail: string; setDetail: (v: string) => void;
   images: string[]; setImages: (v: string[]) => void;
   /** 团详情图片（详情页/谷团卡片大图）—— 与开团凭证图分开 */
   descImages: string[];
   setDescImages: (v: string[]) => void;
-  /** 下单/退换规则（从 step4 合并而来） */
-  orderNotice: string;
-  setOrderNotice: (v: string) => void;
 }
 
 const PURPLE = '#7C3AED';
@@ -25,7 +23,6 @@ const PINK = '#F43F5E';
 export default function StepBasicInfo({
   name, setName, desc, setDesc, detail, setDetail, images, setImages,
   descImages, setDescImages,
-  orderNotice, setOrderNotice,
 }: Props) {
   const {
     leaderCredImages, leaderCredDesc,
@@ -58,22 +55,25 @@ export default function StepBasicInfo({
           </View>
         </View>
 
-        {/* —— 团描述 —— */}
+        {/* —— 团描述（含下单 / 退换规则,已合并） —— */}
         <View style={s.card}>
-          <Label text="团描述" tag="可选" />
-          <View style={s.inputWrap}>
+          <Label text="团描述" tag="可选 · 描述本团 + 售后规则" />
+          <Text style={s.hint}>
+            简要介绍本团,也可写清退换规则、发货时效、瑕疵处理,减少售后纠纷
+          </Text>
+          <View style={[s.inputWrap, { marginTop: 8 }]}>
             <TextInput
-              style={[s.input, s.multiline]}
-              placeholder="简要描述本团信息，吸引更多人参团"
+              style={[s.input, s.multilineLong]}
+              placeholder="例:&#10;· 6 月新谷代购 · 偶像梦幻祭 · 包邮包损&#10;· 截团 48h 内补尾款,逾期视为放弃&#10;· 谷子官方瑕疵照价补发,非质量问题不退换&#10;· 默认顺丰陆运 · 江浙沪 1-2 天,其他地区 3-5 天"
               placeholderTextColor="#C4C4D4"
               value={desc}
-              onChangeText={(t) => t.length <= 200 && setDesc(t)}
-              maxLength={200}
+              onChangeText={(t) => t.length <= 500 && setDesc(t)}
+              maxLength={500}
               multiline
               textAlignVertical="top"
             />
           </View>
-          <Text style={s.counter}>{desc.length}/200</Text>
+          <Text style={s.counter}>{desc.length}/500</Text>
         </View>
 
         {/* —— 信誉凭证 入口卡（暂时隐藏） —— */}
@@ -94,27 +94,6 @@ export default function StepBasicInfo({
           </View>
           <Ionicons name="chevron-forward" size={18} color="#C4C4D4" />
         </Pressable> */}
-
-        {/* —— 下单 / 退换规则（从原 step4 「下单须知」合并而来） —— */}
-        <View style={s.card}>
-          <Label text="下单 / 退换规则" tag="可选 · 给团员看的承诺" />
-          <Text style={s.hint}>
-            写清退换规则、发货时效、瑕疵处理等，能减少售后纠纷
-          </Text>
-          <View style={[s.inputWrap, { marginTop: 8 }]}>
-            <TextInput
-              style={[s.input, s.multiline]}
-              placeholder="例：&#10;· 截团 48h 内补尾款，逾期视为放弃&#10;· 谷子官方瑕疵照价补发，非质量问题不退换&#10;· 默认顺丰陆运 · 江浙沪 1-2 天，其他地区 3-5 天"
-              placeholderTextColor="#C4C4D4"
-              value={orderNotice}
-              onChangeText={(t) => t.length <= 500 && setOrderNotice(t)}
-              maxLength={500}
-              multiline
-              textAlignVertical="top"
-            />
-          </View>
-          <Text style={s.counter}>{orderNotice.length}/500</Text>
-        </View>
       </ScrollView>
 
       {/* ============================================== */}
@@ -346,6 +325,7 @@ const s = StyleSheet.create({
   },
   input: { fontSize: 14, color: '#1E1B4B', paddingVertical: 14 },
   multiline: { minHeight: 80 },
+  multilineLong: { minHeight: 140 },
   counter: { fontSize: 11, color: '#B8B8D0', textAlign: 'right', marginTop: 6 },
   hint: { fontSize: 12, color: '#9CA3AF', lineHeight: 18 },
 

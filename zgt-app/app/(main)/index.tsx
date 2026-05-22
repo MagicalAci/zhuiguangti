@@ -49,7 +49,6 @@ export default function GroupsScreen() {
   const { selectedTags, selectedCategoryKeys, prefsDone, setPrefs } = usePrefs();
   const [bannerIdx, setBannerIdx] = useState(0);
   const [activeCircle, setActiveCircle] = useState<CategoryKey | ''>('');
-  const [activeIP, setActiveIP] = useState<string>('');
   const [relationFilter, setRelationFilter] = useState<RelationFilter>('all');
 
   const [prefModalVisible, setPrefModalVisible] = useState(false);
@@ -88,21 +87,14 @@ export default function GroupsScreen() {
     [userCircles, activeCircle],
   );
 
-  const activeFilter = activeIP || (activeCircleDef ? activeCircleDef.label : '');
+  const activeFilter = activeCircleDef ? activeCircleDef.label : '';
 
   // —— V1 mock：给每个 group 分配关系标签 ——
   // 实际项目中应根据 group.ownerId / orders / browseHistory / followList 计算
   const groupRelations: Record<string, Relation> = useMemo(() => {
     const result: Record<string, Relation> = {};
-    groups.forEach((g, idx) => {
-      let rel: Relation;
-      if (idx === 0 || idx === 5) rel = 'owner';        // 我发起的
-      else if (idx === 1 || idx === 6) rel = 'ordered'; // 我下单的
-      else if (idx === 2)              rel = 'managed'; // 我管理的
-      else if (idx === 3)              rel = 'browse';  // 我浏览的
-      else if (idx === 4)              rel = 'follow';  // 我关注的
-      else                              rel = 'recommend';
-      result[g.id] = rel;
+    groups.forEach((g) => {
+      result[g.id] = 'owner';
     });
     return result;
   }, [groups]);
@@ -119,12 +111,7 @@ export default function GroupsScreen() {
       list = list.filter((g) => groupRelations[g.id] === relationFilter);
     }
 
-    if (activeIP) {
-      const hit = list.filter((g) =>
-        [g.ipName, g.name, g.description].some((v) => v?.includes(activeIP))
-      );
-      list = hit.length > 0 ? hit : list.slice(0, 6);
-    } else if (activeCircleDef) {
+    if (activeCircleDef) {
       const tags = activeCircleDef.tags;
       const hit = list.filter((g) =>
         tags.some((tag) => [g.ipName, g.name, g.description].some((v) => v?.includes(tag)))
@@ -157,7 +144,7 @@ export default function GroupsScreen() {
       return ah - bh;
     });
     return { mineGroups: mine, recGroups: rec };
-  }, [groups, relationFilter, activeIP, activeCircleDef, groupRelations, selectedTags]);
+  }, [groups, relationFilter, activeCircleDef, groupRelations, selectedTags]);
 
   const totalCount = mineGroups.length + recGroups.length;
 
@@ -203,7 +190,7 @@ export default function GroupsScreen() {
       {/* —— 圈子顶栏 —— */}
       <View style={s.circleBarWrap}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.circleBar}>
-          <Pressable style={s.circleItem} onPress={() => { setActiveCircle(''); setActiveIP(''); }}>
+          <Pressable style={s.circleItem} onPress={() => setActiveCircle('')}>
             <View style={[s.circleAvaWrap, activeCircle === '' && s.circleAvaWrapActive]}>
               <LinearGradient
                 colors={['#F472B6', '#F43F5E']}
@@ -220,7 +207,7 @@ export default function GroupsScreen() {
           {userCircles.map((cat) => {
             const active = activeCircle === cat.key;
             return (
-              <Pressable key={cat.key} style={s.circleItem} onPress={() => { setActiveCircle(cat.key); setActiveIP(''); }}>
+              <Pressable key={cat.key} style={s.circleItem} onPress={() => setActiveCircle(cat.key)}>
                 <View style={[s.circleAvaWrap, active && { borderColor: cat.color }]}>
                   <View style={[s.circleAva, { backgroundColor: cat.bg }]}>
                     <Text style={{ fontSize: 22 }}>{cat.emoji}</Text>
@@ -244,36 +231,7 @@ export default function GroupsScreen() {
         </ScrollView>
       </View>
 
-      {/* —— IP 筛选：和圈子一样的圆形排列 —— */}
-      {activeCircleDef && (
-        <View style={s.ipBarWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.circleBar}>
-            <Pressable style={s.circleItem} onPress={() => setActiveIP('')}>
-              <View style={[s.ipAvaWrap, activeIP === '' && { borderColor: activeCircleDef.color }]}>
-                <View style={[s.ipAva, { backgroundColor: activeIP === '' ? activeCircleDef.color : '#F3F4F6' }]}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: activeIP === '' ? '#FFF' : '#6B7280' }}>ALL</Text>
-                </View>
-              </View>
-              <Text style={[s.circleLabel, activeIP === '' && { color: activeCircleDef.color, fontWeight: '700' }]}>全部</Text>
-            </Pressable>
-
-            {activeCircleDef.tags.map((ip) => {
-              const on = activeIP === ip;
-              const initial = ip.slice(0, 2);
-              return (
-                <Pressable key={ip} style={s.circleItem} onPress={() => setActiveIP(on ? '' : ip)}>
-                  <View style={[s.ipAvaWrap, on && { borderColor: activeCircleDef.color }]}>
-                    <View style={[s.ipAva, { backgroundColor: on ? activeCircleDef.bg : '#F5F3FF' }]}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: on ? activeCircleDef.color : '#9CA3AF' }} numberOfLines={1}>{initial}</Text>
-                    </View>
-                  </View>
-                  <Text style={[s.circleLabel, on && { color: activeCircleDef.color, fontWeight: '700' }]} numberOfLines={1}>{ip}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+      {/* IP 二级筛选已下线 · 一级圈子分类已经够用 */}
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         {/* —— 统一紧凑网格：我相关在前，推荐紧随其后，无分隔标题 —— */}
@@ -285,7 +243,7 @@ export default function GroupsScreen() {
               const matchedCircle = userCircles.find((cat) =>
                 cat.tags.some((t) => [g.ipName, g.name, g.description].some((v) => v?.includes(t)))
               );
-              const tag = activeIP || g.ipName || (matchedCircle?.label ?? '');
+              const tag = g.ipName || (matchedCircle?.label ?? '');
               const selfTag = rel === 'recommend'
                 ? (matchedCircle
                     ? { label: '为你优选', color: '#F43F5E', bg: '#FFF1F2' }
@@ -307,11 +265,9 @@ export default function GroupsScreen() {
             <EmptyState
               icon="people-outline"
               title="暂无符合条件的拼团"
-              sub={activeIP
-                ? `换个IP试试 · 当前：${activeIP}`
-                : activeCircleDef
-                  ? `「${activeCircleDef.label}」暂无拼团，试试其他圈子`
-                  : '换个筛选试试，或去添加更多圈子'}
+              sub={activeCircleDef
+                ? `「${activeCircleDef.label}」暂无拼团，试试其他圈子`
+                : '换个筛选试试，或去添加更多圈子'}
             />
           )}
         </View>
@@ -412,15 +368,37 @@ function MiniGridCard({
   const mins = Math.max(0, Math.floor((diff % 3600000) / 60000));
 
   const products = group.products;
+  const count = products.length;
   const showProducts = products.slice(0, 4);
-  const extraCount = products.length - 3;
+  const extraCount = count - 3;
 
   return (
     <Pressable style={miniS.card} onPress={onPress}>
-      {/* 四宫格商品图 */}
+      {/* 商品图 · 自适应 1/2/3/4+ 布局 */}
       <View style={miniS.gridImg}>
-        {showProducts.length <= 1 ? (
+        {count === 0 ? (
           <Image source={PLACEHOLDER_IMG} style={miniS.gridSingle} resizeMode="cover" />
+        ) : count === 1 ? (
+          <Image source={PLACEHOLDER_IMG} style={miniS.gridSingle} resizeMode="cover" />
+        ) : count === 2 ? (
+          showProducts.map((p) => (
+            <View key={p.id} style={miniS.gridHalf}>
+              <Image source={PLACEHOLDER_IMG} style={miniS.gridCellImg} resizeMode="cover" />
+            </View>
+          ))
+        ) : count === 3 ? (
+          <>
+            <View style={miniS.gridThreeMain}>
+              <Image source={PLACEHOLDER_IMG} style={miniS.gridCellImg} resizeMode="cover" />
+            </View>
+            <View style={miniS.gridThreeSide}>
+              {showProducts.slice(1, 3).map((p) => (
+                <View key={p.id} style={miniS.gridThreeSmall}>
+                  <Image source={PLACEHOLDER_IMG} style={miniS.gridCellImg} resizeMode="cover" />
+                </View>
+              ))}
+            </View>
+          </>
         ) : (
           showProducts.map((p, i) => {
             const isLast = i === 3 && extraCount > 1;
@@ -559,18 +537,6 @@ const s = StyleSheet.create({
   circleLabel: { fontSize: 11, color: '#374151', marginTop: 5, fontWeight: '600' },
   circleLabelActive: { color: '#F43F5E', fontWeight: '800' },
 
-  // —— IP 筛选条 ——
-  ipBarWrap: { backgroundColor: '#FFF', paddingBottom: 4 },
-  ipAvaWrap: {
-    width: 46, height: 46, borderRadius: 23,
-    borderWidth: 2, borderColor: 'transparent',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  ipAva: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
   // —— 顶部品牌右侧图标 ——
   topIconBtn: {
     width: 34, height: 34, borderRadius: 17,
@@ -621,6 +587,25 @@ const miniS = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP, backgroundColor: '#F3F4F6',
   },
   gridSingle: { width: '100%', height: '100%' },
+
+  // 2 张 · 左右各半
+  gridHalf: { width: CELL_SIZE, height: CARD_W, position: 'relative' },
+
+  // 3 张 · 左大(2/3宽) + 右侧上下两小
+  gridThreeMain: {
+    width: CARD_W * 0.62, height: CARD_W,
+    position: 'relative', overflow: 'hidden',
+  },
+  gridThreeSide: {
+    width: CARD_W * 0.38 - GRID_GAP, height: CARD_W,
+    gap: GRID_GAP,
+  },
+  gridThreeSmall: {
+    width: '100%', height: (CARD_W - GRID_GAP) / 2,
+    position: 'relative', overflow: 'hidden',
+  },
+
+  // 4 张 · 2×2 田字格
   gridCell: { width: CELL_SIZE, height: CELL_SIZE, position: 'relative' },
   gridCellImg: { width: '100%', height: '100%' },
   gridOverlay: {

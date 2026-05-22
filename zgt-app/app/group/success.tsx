@@ -113,11 +113,6 @@ export default function CreateSuccessScreen() {
               <Text style={s.linkBtnText}>查看拼团</Text>
               <Ionicons name="chevron-forward" size={12} color={PURPLE} />
             </Pressable>
-            <View style={s.linkDivider} />
-            <Pressable style={s.linkBtn} onPress={() => router.replace('/(main)/' as any)}>
-              <Text style={s.linkBtnText}>回到首页</Text>
-              <Ionicons name="chevron-forward" size={12} color={PURPLE} />
-            </Pressable>
           </View>
         </View>
       </ScrollView>
@@ -255,8 +250,6 @@ const s = StyleSheet.create({
   },
   linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 16, paddingVertical: 10 },
   linkBtnText: { fontSize: 13, fontWeight: '600', color: PURPLE },
-  linkDivider: { width: 1, height: 14, backgroundColor: '#E5E7EB' },
-
   toast: {
     position: 'absolute', top: '45%', alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 6,

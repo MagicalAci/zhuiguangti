@@ -72,7 +72,6 @@ function buildMockAttrs(): AttributesData {
     requireNote: true,
     noteDesc: '请填写应援角色 + 偏好',
     autoCancelMin: true,
-    orderNotice: '本团截团后 48h 内补尾款，逾期视为放弃',
     shippingMethod: 'express',
     shippingFee: '7/8',
     allowEditAddress: true,
@@ -104,7 +103,6 @@ function emptyAttrs(): AttributesData {
     requireNote: false,
     noteDesc: '',
     autoCancelMin: true,
-    orderNotice: '',
     shippingMethod: 'express',
     shippingFee: '0',
     allowEditAddress: true,
@@ -286,19 +284,11 @@ export default function CreateGroupScreen() {
         <TouchableOpacity
           activeOpacity={0.6}
           onPress={() => {
-            Alert.alert(
-              '退出编辑',
-              '当前内容尚未发布，是否保存为草稿？',
-              [
-                { text: '取消', style: 'cancel' },
-                {
-                  text: '保存草稿并退出',
-                  onPress: () => {
-                    if (router.canGoBack()) { router.back(); } else { router.replace('/(main)/' as any); }
-                  },
-                },
-              ],
-            );
+            // Alert.alert 的多按钮 + 回调在 RN-Web 上不被支持(只能 window.alert
+            // 弹个无按钮提示),会导致用户点 X 但实际没退出。
+            // demo 场景直接退出最干脆 —— 不强行加二次确认。
+            if (router.canGoBack()) router.back();
+            else router.replace('/(main)/' as any);
           }}
           hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           style={s.closeBtn}
@@ -338,8 +328,6 @@ export default function CreateGroupScreen() {
             detail={detail} setDetail={setDetail}
             images={images} setImages={setImages}
             descImages={descImages} setDescImages={setDescImages}
-            orderNotice={attrs.orderNotice}
-            setOrderNotice={(v) => setAttrs({ ...attrs, orderNotice: v })}
           />
         )}
         {currentKey === 'products' && (

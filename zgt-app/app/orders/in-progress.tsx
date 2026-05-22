@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useStore } from '../../src/store/useStore';
+import type { GroupStage } from '../../src/types';
 import {
   canonicalGroupStage,
   CANONICAL_STAGE_META,
@@ -33,10 +34,11 @@ interface OrderItem {
   sku: string;
   amount: number;
   status: Status;
-  /** 「待付尾款」状态下,团长是否已发起收尾款通知;false 时订单上显示「尾款时间待团长通知」 */
   finalNotified?: boolean;
-  /** 补邮原因 */
   shipFeeReason?: string;
+  userNote?: string;
+  userCity?: string;
+  userAddress?: string;
 }
 
 const STATUS_CFG: Record<Status, { label: string; emoji: string; color: string; bg: string; icon: string }> = {
@@ -54,17 +56,16 @@ const TILE_STATUSES: Status[] = ['gathering', 'payDeposit', 'payFull', 'finalPay
 
 // —— mock 订单数据 ——
 const MOCK_ORDERS: OrderItem[] = [
-  { id: 'o1',  groupId: 'g1', userName: '星月',   userAvatar: '星', groupName: '偶像梦幻祭 6月新谷代购团', sku: '朔间零 吧唧 ×1',            amount: 42,    status: 'gathering' },
-  { id: 'o2',  groupId: 'g1', userName: '七七',   userAvatar: '七', groupName: '偶像梦幻祭 6月新谷代购团', sku: '天城一彩 吧唧 ×1',          amount: 42,    status: 'gathering' },
-  { id: 'o3',  groupId: 'g1', userName: '小鹿',   userAvatar: '小', groupName: '偶像梦幻祭 6月新谷代购团', sku: '冰鹰 立牌 ×1',              amount: 35,    status: 'payDeposit' },
-  { id: 'o4',  groupId: 'leader_sampling', userName: '柚子',   userAvatar: '柚', groupName: '名侦探柯南 一番赏代抽',     sku: '柯南 A 赏立牌 ×1',          amount: 95,    status: 'payFull' },
-  { id: 'o5',  groupId: 'member_gathering', userName: '棉花糖', userAvatar: '棉', groupName: '原神 4.5 卡池代抽',         sku: '钟离 挂件 ×1',              amount: 47.25, status: 'finalPay', finalNotified: false },
-  { id: 'o6',  groupId: 'member_gathering', userName: '阿澈',   userAvatar: '阿', groupName: '原神 4.5 卡池代抽',         sku: '阿蕾奇诺 立牌 ×1',           amount: 47.25, status: 'finalPay', finalNotified: true },
-  { id: 'o7',  groupId: 'member_gathering', userName: '夏目',   userAvatar: '夏', groupName: '原神 4.5 卡池代抽',         sku: '钟离 立牌 ×1',               amount: 47.25, status: 'finalPay', finalNotified: true },
-  { id: 'o11', groupId: 'g1', userName: '团子',   userAvatar: '团', groupName: '偶像梦幻祭 6月新谷代购团', sku: '限定盲盒 ×1',                amount: 127,   status: 'payDeposit' },
-  // —— 团长事后发起的「补邮费」 ——
-  { id: 'o13', groupId: 'g1', userName: '星月',   userAvatar: '星', groupName: '偶像梦幻祭 6月新谷代购团', sku: '📦 补邮费 · 货物超重邮费上浮', amount: 5,     status: 'shipFee', shipFeeReason: '包裹超过 3kg,顺丰实际邮费上浮' },
-  { id: 'o14', groupId: 'g1', userName: '七七',   userAvatar: '七', groupName: '偶像梦幻祭 6月新谷代购团', sku: '📦 补邮费 · 货物超重邮费上浮', amount: 5,     status: 'shipFee', shipFeeReason: '包裹超过 3kg,顺丰实际邮费上浮' },
+  { id: 'o1',  groupId: 'g1', userName: '星月',   userAvatar: '星', groupName: '偶像梦幻祭 6月新谷代购团', sku: '朔间零 吧唧 ×1',            amount: 42,    status: 'gathering',   userNote: '希望包装仔细一点～', userCity: '上海', userAddress: '浦东新区张杨路500号' },
+  { id: 'o2',  groupId: 'g1', userName: '七七',   userAvatar: '七', groupName: '偶像梦幻祭 6月新谷代购团', sku: '天城一彩 吧唧 ×1',          amount: 42,    status: 'gathering',   userNote: '周末不在家请放快递柜', userCity: '北京', userAddress: '朝阳区望京SOHO' },
+  { id: 'o3',  groupId: 'g1', userName: '小鹿',   userAvatar: '小', groupName: '偶像梦幻祭 6月新谷代购团', sku: '冰鹰 立牌 ×1',              amount: 35,    status: 'payDeposit',  userCity: '广州', userAddress: '天河区体育西路' },
+  { id: 'o4',  groupId: 'leader_sampling', userName: '柚子',   userAvatar: '柚', groupName: '名侦探柯南 一番赏代抽',     sku: '柯南 A 赏立牌 ×1',          amount: 95,    status: 'payFull',     userCity: '深圳', userAddress: '南山区科技园' },
+  { id: 'o5',  groupId: 'member_gathering', userName: '棉花糖', userAvatar: '棉', groupName: '原神 4.5 卡池代抽',         sku: '钟离 挂件 ×1',              amount: 47.25, status: 'finalPay', finalNotified: false, userNote: '急用', userCity: '杭州', userAddress: '西湖区文三路' },
+  { id: 'o6',  groupId: 'member_gathering', userName: '阿澈',   userAvatar: '阿', groupName: '原神 4.5 卡池代抽',         sku: '阿蕾奇诺 立牌 ×1',           amount: 47.25, status: 'finalPay', finalNotified: true, userCity: '成都', userAddress: '锦江区春熙路' },
+  { id: 'o7',  groupId: 'member_gathering', userName: '夏目',   userAvatar: '夏', groupName: '原神 4.5 卡池代抽',         sku: '钟离 立牌 ×1',               amount: 47.25, status: 'finalPay', finalNotified: true, userCity: '武汉', userAddress: '武昌区中南路' },
+  { id: 'o11', groupId: 'g1', userName: '团子',   userAvatar: '团', groupName: '偶像梦幻祭 6月新谷代购团', sku: '限定盲盒 ×1',                amount: 127,   status: 'payDeposit',  userNote: '盲盒不要拆！', userCity: '南京', userAddress: '鼓楼区中山路' },
+  { id: 'o13', groupId: 'g1', userName: '星月',   userAvatar: '星', groupName: '偶像梦幻祭 6月新谷代购团', sku: '📦 补邮费 · 货物超重邮费上浮', amount: 5,     status: 'shipFee', shipFeeReason: '包裹超过 3kg,顺丰实际邮费上浮', userCity: '上海', userAddress: '浦东新区张杨路500号' },
+  { id: 'o14', groupId: 'g1', userName: '七七',   userAvatar: '七', groupName: '偶像梦幻祭 6月新谷代购团', sku: '📦 补邮费 · 货物超重邮费上浮', amount: 5,     status: 'shipFee', shipFeeReason: '包裹超过 3kg,顺丰实际邮费上浮', userCity: '北京', userAddress: '朝阳区望京SOHO' },
 ];
 
 export default function InProgressOrdersPage() {
@@ -96,11 +97,16 @@ export default function InProgressOrdersPage() {
   const [remindDeadline, setRemindDeadline] = useState('2026-05-25');
   const [remindNote, setRemindNote] = useState('');
 
+  // —— 团长操作（从 group detail 迁移过来） ——
+  const [stageEditOpen, setStageEditOpen] = useState(false);
+  const [collectConfirmOpen, setCollectConfirmOpen] = useState<null | 'deposit' | 'final' | 'full'>(null);
+
   // —— 数据 ——
   const [orders, setOrders] = useState<OrderItem[]>(MOCK_ORDERS);
 
   // 从 store 取当前团,把订单状态按团 stage 投影
   const groups = useStore((st) => st.groups);
+  const updateGroupStage = useStore((st) => st.updateGroupStage);
   const scopedGroup = useMemo(
     () => (scopedGroupId ? groups.find((g) => g.id === scopedGroupId) : undefined),
     [groups, scopedGroupId],
@@ -117,7 +123,6 @@ export default function InProgressOrdersPage() {
     stage: CanonicalGroupStage,
     payMode: 'deposit' | 'full',
   ): OrderItem & { _hidden?: boolean } => {
-    // 补邮单(shipFee)只在「发货中」阶段出现
     if (raw.status === 'shipFee') {
       return stage === 'shipping' ? raw : { ...raw, _hidden: true };
     }
@@ -125,17 +130,15 @@ export default function InProgressOrdersPage() {
       case 'gathering':
         return { ...raw, status: 'gathering', finalNotified: undefined };
       case 'deposit_collecting':
-        return {
-          ...raw,
-          status: payMode === 'full' ? 'payFull' : 'payDeposit',
-          finalNotified: undefined,
-        };
+        return { ...raw, status: 'payDeposit', finalNotified: undefined };
+      case 'full_collecting':
+        return { ...raw, status: 'payFull', finalNotified: undefined };
       case 'final_collecting':
         return { ...raw, status: 'finalPay', finalNotified: true };
       case 'shipping':
+        return raw;
       case 'closed':
-        // 已结清的订单移到「已完成订单」页,进行中页不再展示
-        return { ...raw, _hidden: true };
+        return { ...raw, status: payMode === 'full' ? 'payFull' : 'finalPay', finalNotified: true };
       default:
         return raw;
     }
@@ -346,62 +349,80 @@ export default function InProgressOrdersPage() {
           <Pressable style={s.iconBtn} onPress={() => router.back()} hitSlop={10}>
             <Ionicons name="arrow-back" size={20} color="#FFF" />
           </Pressable>
-          <Text style={s.title}>进行中订单</Text>
+          <Text style={s.title}>{scopedGroupId ? '团订单' : '进行中订单'}</Text>
           <View style={{ width: 36 }} />
         </View>
 
-        {/* 6 状态 tile · 水平滚动 */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tileRow}>
-          {TILE_STATUSES.map((st) => {
-            const cfg = STATUS_CFG[st];
-            const on = selectedStatuses.has(st);
-            return (
-              <Pressable
-                key={st}
-                style={[s.tile, on && s.tileActive]}
-                onPress={() => toggleStatus(st)}
-              >
-                <Text style={s.tileEmoji}>{cfg.emoji}</Text>
-                <Text style={s.tileLabel}>{cfg.label}</Text>
-                <Text style={s.tileNum}>{counts[st]}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* 6 状态 tile · 仅全局模式显示 */}
+        {!scopedGroupId && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tileRow}>
+            {TILE_STATUSES.map((st) => {
+              const cfg = STATUS_CFG[st];
+              const on = selectedStatuses.has(st);
+              return (
+                <Pressable
+                  key={st}
+                  style={[s.tile, on && s.tileActive]}
+                  onPress={() => toggleStatus(st)}
+                >
+                  <Text style={s.tileEmoji}>{cfg.emoji}</Text>
+                  <Text style={s.tileLabel}>{cfg.label}</Text>
+                  <Text style={s.tileNum}>{counts[st]}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
       </LinearGradient>
 
-      {/* —— 操作工具栏 —— */}
-      <View style={s.toolbar}>
-        <Pressable style={s.toolBtn} onPress={openFilter}>
-          <Ionicons name="filter" size={14} color={PURPLE} />
-          <Text style={s.toolBtnText} numberOfLines={1}>{filterLabel}</Text>
-          <Ionicons name="chevron-down" size={14} color={PURPLE} />
-        </Pressable>
+      {/* —— 团阶段 · 左右布局 —— */}
+      {scopedGroup && scopedStage && (
+        <View style={s.stageBar}>
+          <View style={s.stageBarLeft}>
+            <View style={[s.stageBarDot, { backgroundColor: CANONICAL_STAGE_META[scopedStage].color }]} />
+            <Text style={s.stageBarLabel}>当前阶段</Text>
+            <Text style={[s.stageBarValue, { color: CANONICAL_STAGE_META[scopedStage].color }]}>
+              {CANONICAL_STAGE_META[scopedStage].label}
+            </Text>
+          </View>
+          <Pressable style={s.stageBarBtn} onPress={() => setStageEditOpen(true)}>
+            <Ionicons name="swap-horizontal-outline" size={15} color={PURPLE} />
+            <Text style={s.stageBarBtnText}>切换阶段</Text>
+          </Pressable>
+        </View>
+      )}
 
-        <Pressable
-          style={s.toolBtn}
-          onPress={() => !scopedGroupId && setGroupFilterOpen(true)}
-          disabled={!!scopedGroupId}
-        >
-          <Ionicons name="people-outline" size={14} color={PURPLE} />
-          <Text style={s.toolBtnText} numberOfLines={1}>
-            {scopedGroupId
-              ? scopedGroupLabel.length > 8 ? scopedGroupLabel.slice(0, 8) + '…' : scopedGroupLabel
-              : groupFilter === 'all' ? '全部拼团' : groupFilter.length > 8 ? groupFilter.slice(0, 8) + '…' : groupFilter}
-          </Text>
-          {!scopedGroupId && <Ionicons name="chevron-down" size={14} color={PURPLE} />}
-        </Pressable>
+      {/* —— 操作工具栏 · 仅全局模式显示 —— */}
+      {!scopedGroupId && (
+        <View style={s.toolbar}>
+          <Pressable style={s.toolBtn} onPress={openFilter}>
+            <Ionicons name="filter" size={14} color={PURPLE} />
+            <Text style={s.toolBtnText} numberOfLines={1}>{filterLabel}</Text>
+            <Ionicons name="chevron-down" size={14} color={PURPLE} />
+          </Pressable>
 
-        <Pressable
-          style={[s.toolBtn, batchMode && s.toolBtnActive]}
-          onPress={() => (batchMode ? exitBatch() : enterBatch())}
-        >
-          <Ionicons name={batchMode ? 'close' : 'checkbox-outline'} size={14} color={batchMode ? '#FFF' : PURPLE} />
-          <Text style={[s.toolBtnText, batchMode && { color: '#FFF' }]}>
-            {batchMode ? '退出批量' : '批量'}
-          </Text>
-        </Pressable>
-      </View>
+          <Pressable
+            style={s.toolBtn}
+            onPress={() => setGroupFilterOpen(true)}
+          >
+            <Ionicons name="people-outline" size={14} color={PURPLE} />
+            <Text style={s.toolBtnText} numberOfLines={1}>
+              {groupFilter === 'all' ? '全部拼团' : groupFilter.length > 8 ? groupFilter.slice(0, 8) + '…' : groupFilter}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={PURPLE} />
+          </Pressable>
+
+          <Pressable
+            style={[s.toolBtn, batchMode && s.toolBtnActive]}
+            onPress={() => (batchMode ? exitBatch() : enterBatch())}
+          >
+            <Ionicons name={batchMode ? 'close' : 'checkbox-outline'} size={14} color={batchMode ? '#FFF' : PURPLE} />
+            <Text style={[s.toolBtnText, batchMode && { color: '#FFF' }]}>
+              {batchMode ? '退出批量' : '批量'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* —— 订单列表 —— */}
       <ScrollView
@@ -413,46 +434,12 @@ export default function InProgressOrdersPage() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {scopedStage && (
-          <View style={[
-            s.stageCard,
-            { borderLeftColor: CANONICAL_STAGE_META[scopedStage].color, backgroundColor: CANONICAL_STAGE_META[scopedStage].bg },
-          ]}>
-            <View style={[s.stagePill, { backgroundColor: CANONICAL_STAGE_META[scopedStage].color }]}>
-              <Ionicons name={CANONICAL_STAGE_META[scopedStage].icon as any} size={12} color="#FFF" />
-              <Text style={s.stagePillText}>{CANONICAL_STAGE_META[scopedStage].label}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.stageGroupName} numberOfLines={1}>{scopedGroupLabel}</Text>
-              <Text style={[s.stageHint, { color: CANONICAL_STAGE_META[scopedStage].color }]} numberOfLines={2}>
-                {scopedStage === 'gathering' && `团员订单 ${baseOrders.length} 单已下单 · 准备好后到详情页发起「收定金」`}
-                {scopedStage === 'deposit_collecting' && `团长已发起收款 · ${baseOrders.length} 单待付${scopedPayMode === 'full' ? '全款' : '定金'}`}
-                {scopedStage === 'final_collecting' && `已发起补尾款 · ${baseOrders.length} 单等团员补齐`}
-                {scopedStage === 'shipping' && '货已到手 · 可根据真实邮费发起「补邮费」'}
-                {scopedStage === 'closed' && '本团已截团 · 历史订单请到「已完成订单」页查看'}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => router.push({ pathname: '/group/[id]' as any, params: { id: scopedGroupId!, view: 'leader' } })}
-              hitSlop={6}
-              style={s.stageJump}
-            >
-              <Text style={[s.stageJumpText, { color: CANONICAL_STAGE_META[scopedStage].color }]}>看详情</Text>
-              <Ionicons name="chevron-forward" size={12} color={CANONICAL_STAGE_META[scopedStage].color} />
-            </Pressable>
-          </View>
-        )}
+        {/* 团阶段提示卡片已移除 · 从团详情进来不需要重复展示 */}
 
         {filtered.length === 0 && (
           <View style={s.empty}>
             <Ionicons name="filter-outline" size={36} color="#E5E7EB" />
-            <Text style={s.emptyText}>
-              {scopedStage === 'shipping'
-                ? '该团订单已结清 · 请到「已完成订单」查看'
-                : scopedStage === 'closed'
-                ? '该团已截团 · 请到「已完成订单」查看'
-                : '当前筛选下暂无订单'}
-            </Text>
+            <Text style={s.emptyText}>当前筛选下暂无订单</Text>
             <Pressable onPress={() => setSelectedStatuses(new Set())} style={s.emptyBtn}>
               <Text style={s.emptyBtnText}>清除筛选</Text>
             </Pressable>
@@ -501,6 +488,26 @@ export default function InProgressOrdersPage() {
           )}
         </View>
       )}
+
+      {/* —— 吸底 CTA（根据团阶段变化） —— */}
+      {scopedGroup && scopedStage && scopedStage !== 'closed' && !batchMode && (() => {
+        const ctaMap: Record<string, { label: string; icon: string; color: string; onPress: () => void }> = {
+          gathering:           { label: '分享团', icon: 'share-social', color: '#3B82F6', onPress: () => Alert.alert('分享', '已生成分享链接') },
+          deposit_collecting:  { label: '一键催收', icon: 'megaphone', color: PINK, onPress: () => setCollectConfirmOpen(scopedPayMode === 'full' ? 'full' : 'deposit') },
+          final_collecting:    { label: '一键催收', icon: 'megaphone', color: '#A855F7', onPress: () => setCollectConfirmOpen('final') },
+          shipping:            { label: '导出发货表', icon: 'download-outline', color: '#D97706', onPress: () => Alert.alert('导出', '发货表已生成') },
+        };
+        const cta = ctaMap[scopedStage];
+        if (!cta) return null;
+        return (
+          <View style={[s.stickyCtaWrap, { paddingBottom: 12 + insets.bottom }]}>
+            <Pressable style={[s.stickyCta, { backgroundColor: cta.color }]} onPress={cta.onPress}>
+              <Ionicons name={cta.icon as any} size={18} color="#FFF" />
+              <Text style={s.stickyCtaText}>{cta.label}</Text>
+            </Pressable>
+          </View>
+        );
+      })()}
 
       {/* ============ 拼团筛选 ActionSheet ============ */}
       <Modal visible={groupFilterOpen} transparent animationType="slide" onRequestClose={() => setGroupFilterOpen(false)}>
@@ -685,9 +692,101 @@ export default function InProgressOrdersPage() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ====== 修改团阶段弹窗 ====== */}
+      {scopedGroup && (
+        <Modal visible={stageEditOpen} transparent animationType="slide" onRequestClose={() => setStageEditOpen(false)}>
+          <Pressable style={stageModalS.overlay} onPress={() => setStageEditOpen(false)}>
+            <Pressable style={stageModalS.sheet} onPress={(e) => e.stopPropagation()}>
+              <Text style={stageModalS.title}>修改团阶段</Text>
+              <Text style={stageModalS.sub}>选择新阶段后将即时生效，团员订单状态将同步更新</Text>
+              <View style={stageModalS.list}>
+                {CANONICAL_STAGES.map((cs) => {
+                  const meta = CANONICAL_STAGE_META[cs];
+                  const on = scopedStage === cs;
+                  return (
+                    <Pressable
+                      key={cs}
+                      style={[stageModalS.item, on && { backgroundColor: meta.bg, borderColor: meta.color }]}
+                      onPress={() => {
+                        if (scopedGroup) {
+                          updateGroupStage(scopedGroup.id, CANONICAL_TO_RAW[cs]);
+                        }
+                        setStageEditOpen(false);
+                      }}
+                    >
+                      <View style={[stageModalS.dot, { backgroundColor: meta.color }]} />
+                      <Text style={[stageModalS.itemText, on && { color: meta.color, fontWeight: '800' }]}>{meta.label}</Text>
+                      {on && <Ionicons name="checkmark-circle" size={16} color={meta.color} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Pressable style={stageModalS.cancelBtn} onPress={() => setStageEditOpen(false)}>
+                <Text style={stageModalS.cancelText}>取消</Text>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
+      {/* ====== 一键收款确认弹窗 ====== */}
+      {scopedGroup && (
+        <Modal visible={collectConfirmOpen !== null} transparent animationType="fade" onRequestClose={() => setCollectConfirmOpen(null)}>
+          <Pressable style={confirmS.overlay} onPress={() => setCollectConfirmOpen(null)}>
+            <Pressable style={confirmS.card} onPress={(e) => e.stopPropagation()}>
+              {(() => {
+                const kind = collectConfirmOpen;
+                if (!kind) return null;
+                const text: Record<string, { title: string; desc: string; btn: string; color: string }> = {
+                  deposit: { title: '一键收定金', desc: '确认向所有团员发起定金收款通知？', btn: '发起收款', color: PINK },
+                  full:    { title: '一键收全款', desc: '确认向所有团员发起全款收款通知？', btn: '发起收款', color: PINK },
+                  final:   { title: '一键收尾款', desc: '确认向所有团员发起尾款收款通知？', btn: '发起收款', color: '#A855F7' },
+                };
+                const t = text[kind] ?? text.deposit;
+                return (
+                  <>
+                    <View style={[confirmS.iconWrap, { backgroundColor: t.color + '15' }]}>
+                      <Ionicons name="megaphone" size={28} color={t.color} />
+                    </View>
+                    <Text style={confirmS.title}>{t.title}</Text>
+                    <Text style={confirmS.sub}>{t.desc}</Text>
+                    <View style={confirmS.btnRow}>
+                      <Pressable style={confirmS.cancelBtn} onPress={() => setCollectConfirmOpen(null)}>
+                        <Text style={confirmS.cancelText}>取消</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[confirmS.dangerBtn, { backgroundColor: t.color }]}
+                        onPress={() => {
+                          Alert.alert('已通知', `已向所有团员推送${t.title}通知`);
+                          setCollectConfirmOpen(null);
+                        }}
+                      >
+                        <Ionicons name="send" size={13} color="#FFF" />
+                        <Text style={confirmS.dangerText}>{t.btn}</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                );
+              })()}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }
+
+const CANONICAL_STAGES: CanonicalGroupStage[] = [
+  'gathering', 'deposit_collecting', 'final_collecting', 'shipping', 'closed',
+];
+const CANONICAL_TO_RAW: Record<CanonicalGroupStage, GroupStage> = {
+  gathering: 'gathering',
+  deposit_collecting: 'deposit_collecting',
+  final_collecting: 'final_collecting',
+  shipping: 'shipping',
+  closed: 'completed',
+};
 
 /* ============ 订单行（细长两行卡片） ============ */
 function OrderRow({ order, batchMode, checked, onPress }: {
@@ -710,24 +809,34 @@ function OrderRow({ order, batchMode, checked, onPress }: {
         <Text style={rowS.avatarText}>{order.userAvatar}</Text>
       </View>
 
-      <View style={{ flex: 1, gap: 4 }}>
-        <View style={rowS.line1}>
-          <Text style={rowS.userName} numberOfLines={1}>{order.userName}</Text>
-          <Text style={rowS.groupName} numberOfLines={1}>· {order.groupName}</Text>
-          <View style={[rowS.statusPill, { backgroundColor: cfg.bg }]}>
-            <Text style={[rowS.statusText, { color: cfg.color }]}>{cfg.emoji} {cfg.label}</Text>
-          </View>
-        </View>
-        <View style={rowS.line2}>
-          <Text style={rowS.sku} numberOfLines={1}>{order.sku}</Text>
-          <Text style={rowS.amount}>¥{order.amount.toFixed(2)}</Text>
-        </View>
-        {order.status === 'finalPay' && order.finalNotified === false && (
-          <View style={rowS.finalHint}>
-            <Ionicons name="time-outline" size={10} color="#7C3AED" />
-            <Text style={rowS.finalHintText}>尾款时间待团长通知</Text>
+      <View style={{ flex: 1, gap: 3 }}>
+        {/* 第一行：昵称 */}
+        <Text style={rowS.userName} numberOfLines={1}>{order.userName}</Text>
+
+        {/* 第二行：备注 */}
+        {order.userNote ? (
+          <Text style={rowS.userNote} numberOfLines={1}>{order.userNote}</Text>
+        ) : (
+          <Text style={rowS.userNoteEmpty}>暂无备注</Text>
+        )}
+
+        {/* 第三行：地址 */}
+        {order.userCity && (
+          <View style={rowS.addressRow}>
+            <Ionicons name="location-outline" size={11} color="#9CA3AF" />
+            <Text style={rowS.addressText} numberOfLines={1}>
+              {order.userCity} · {order.userAddress}
+            </Text>
           </View>
         )}
+      </View>
+
+      {/* 右侧：金额 + 状态 */}
+      <View style={rowS.rightCol}>
+        <Text style={[rowS.amount, { color: cfg.color }]}>¥{order.amount.toFixed(2)}</Text>
+        <View style={[rowS.statusPill, { backgroundColor: cfg.bg }]}>
+          <Text style={[rowS.statusText, { color: cfg.color }]}>{cfg.label}</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -829,13 +938,45 @@ const s = StyleSheet.create({
   batchBtnPrimary: { backgroundColor: PURPLE },
   batchBtnText: { fontSize: 13, fontWeight: '700' },
   batchTip: { fontSize: 10, color: '#F59E0B', marginTop: 6, textAlign: 'center' },
+
+  // —— 团阶段左右栏 ——
+  stageBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFF', marginHorizontal: 14, marginTop: 10,
+    borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16,
+    borderWidth: 1, borderColor: '#EEEAF5',
+    shadowColor: '#1E1B4B', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  stageBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stageBarDot: { width: 8, height: 8, borderRadius: 4 },
+  stageBarLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
+  stageBarValue: { fontSize: 16, fontWeight: '900' },
+  stageBarBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 20, backgroundColor: '#F5F3FF',
+    borderWidth: 1.5, borderColor: '#E9D5FF',
+  },
+  stageBarBtnText: { fontSize: 12, fontWeight: '700', color: PURPLE },
+
+  // —— 吸底 CTA ——
+  stickyCtaWrap: {
+    paddingHorizontal: 16, paddingTop: 10,
+    backgroundColor: '#FFF',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB',
+  },
+  stickyCta: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 15, borderRadius: 14,
+  },
+  stickyCtaText: { fontSize: 16, fontWeight: '800', color: '#FFF' },
 });
 
 const rowS = StyleSheet.create({
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     backgroundColor: '#FFF', borderRadius: 14,
-    paddingHorizontal: 12, paddingVertical: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
     marginTop: 8,
     borderWidth: 1, borderColor: '#F3F4F6',
   },
@@ -845,33 +986,29 @@ const rowS = StyleSheet.create({
     width: 20, height: 20, borderRadius: 6,
     borderWidth: 1.5, borderColor: '#D1D5DB',
     alignItems: 'center', justifyContent: 'center',
+    marginTop: 4,
   },
   checkboxOn: { backgroundColor: PURPLE, borderColor: PURPLE },
 
   avatar: {
-    width: 34, height: 34, borderRadius: 11,
+    width: 38, height: 38, borderRadius: 12,
     backgroundColor: '#F5F3FF',
     alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { fontSize: 13, fontWeight: '800', color: PURPLE },
-
-  line1: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  userName: { fontSize: 13, fontWeight: '700', color: '#1E1B4B', maxWidth: 80 },
-  groupName: { flex: 1, fontSize: 11, color: '#9CA3AF' },
-  statusPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: '700' },
-
-  line2: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  sku: { flex: 1, fontSize: 12, color: '#6B7280' },
-  amount: { fontSize: 14, fontWeight: '800', color: PINK },
-  finalHint: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    alignSelf: 'flex-start',
     marginTop: 2,
-    paddingHorizontal: 6, paddingVertical: 2,
-    backgroundColor: '#F5F3FF', borderRadius: 6,
   },
-  finalHintText: { fontSize: 10, color: '#7C3AED', fontWeight: '700' },
+  avatarText: { fontSize: 14, fontWeight: '800', color: PURPLE },
+
+  userName: { fontSize: 14, fontWeight: '700', color: '#1E1B4B' },
+  userNote: { fontSize: 12, color: '#6B7280', marginTop: 1 },
+  userNoteEmpty: { fontSize: 11, color: '#D1D5DB', fontStyle: 'italic' },
+
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  addressText: { fontSize: 11, color: '#9CA3AF', flex: 1 },
+
+  rightCol: { alignItems: 'flex-end', gap: 4, marginLeft: 4 },
+  amount: { fontSize: 15, fontWeight: '800' },
+  statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  statusText: { fontSize: 10, fontWeight: '700' },
 });
 
 const sheetS = StyleSheet.create({
@@ -958,4 +1095,28 @@ const remindS = StyleSheet.create({
   field: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F5F5FA', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   fieldInput: { flex: 1, fontSize: 13, color: '#1E1B4B', padding: 0 },
   fieldHint: { fontSize: 10, color: '#9CA3AF' },
+});
+
+const stageModalS = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(30,27,75,0.45)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: '#FFF', borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    paddingTop: 20, paddingBottom: 30, paddingHorizontal: 20,
+  },
+  title: { fontSize: 16, fontWeight: '800', color: '#1E1B4B', textAlign: 'center' },
+  sub: { fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginTop: 4 },
+  list: { marginTop: 16, gap: 8 },
+  item: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: 14, borderWidth: 1.5, borderColor: '#E5E7EB',
+    backgroundColor: '#FAFAFE',
+  },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  itemText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#374151' },
+  cancelBtn: {
+    marginTop: 14, paddingVertical: 12, borderRadius: 20,
+    backgroundColor: '#F3F4F6', alignItems: 'center',
+  },
+  cancelText: { fontSize: 14, fontWeight: '600', color: '#6B7280' },
 });

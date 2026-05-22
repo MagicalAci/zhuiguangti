@@ -110,6 +110,7 @@ function stageLabel(stage: import('../../src/types').GroupStage) {
     case 'gathering':            return { text: '凑车中', color: '#10B981', bg: '#ECFDF5' };
     case 'deposit_collecting':   return { text: '收定金', color: '#F59E0B', bg: '#FFFBEB' };
     case 'final_collecting':     return { text: '收尾款', color: '#F97316', bg: '#FFF7ED' };
+    case 'full_collecting':      return { text: '收款中', color: '#F43F5E', bg: '#FFF1F2' };
     case 'shipping':             return { text: '发货中', color: '#3B82F6', bg: '#EFF6FF' };
     case 'closed':               return { text: '已截团', color: '#EF4444', bg: '#FEF2F2' };
     default:                     return { text: '凑车中', color: '#10B981', bg: '#ECFDF5' };
@@ -152,10 +153,13 @@ export default function GroupDetail() {
   const showJoinedToast = () => showToast('已加入拼团池', '付款时机由团长决定 · 截团前可继续改单');
   // 团员侧 / 团长侧：[去下单] 成功反馈页
   const [orderDoneOpen, setOrderDoneOpen] = useState(false);
+  // 商品图片放大预览
+  const [previewImg, setPreviewImg] = useState<null | { source: any; name: string; price: number }>(null);
   // 团长凭证 Modal
   const [credViewOpen, setCredViewOpen] = useState(false);
   // 团长联系方式 Modal
   const [contactOpen, setContactOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
   // 团长修改团状态 Modal
   const [stageEditOpen, setStageEditOpen] = useState(false);
   // 团长「一键通知收款」二次确认 Modal
@@ -219,9 +223,8 @@ export default function GroupDetail() {
   const cartGoods = Object.entries(cart).reduce((sum, [pid, qty]) => {
     return sum + (productPriceMap.get(pid) ?? 0) * qty;
   }, 0);
-  // 团员侧需要叠加邮费；团长占位无需任何付款（cartTotal=0）
   const cartShipping = isLeader ? 0 : (cartCount > 0 ? shipping.estimate : 0);
-  const cartTotal = isLeader ? 0 : cartGoods + cartShipping;
+  const cartTotal = cartGoods + cartShipping;
 
   const updateCart = (pid: string, delta: 1 | -1) => {
     setCart((prev) => {
@@ -234,16 +237,16 @@ export default function GroupDetail() {
     });
   };
 
-  // 团员/团长:加购触发热门款软提示(团长不弹提示) + 团员侧首次加购弹"已加入拼团池" Toast
+  // 团员/团长:加购触发热门款软提示(团长不弹提示 · 自制团无冷热概念也不弹)
+  // 团员侧首次加购弹"已加入拼团池" Toast
   const tryAddProduct = (pid: string, multiplier: number) => {
     const already = cart[pid] ?? 0;
-    if (!isLeader && already === 0 && multiplier >= 1.3) {
+    if (!isLeader && !isCustomGroup && already === 0 && multiplier >= 1.3) {
       const p = group.products.find((x) => x.id === pid);
       setHotTip({ productId: pid, productName: p?.name ?? '该商品', multiplier });
       return;
     }
     updateCart(pid, 1);
-    // 团员侧:任何成功加购的瞬间都弹一次轻量级 Toast,提醒"已加入拼团池 · 等团长通知付款"
     if (!isLeader) showJoinedToast();
   };
 
@@ -264,6 +267,8 @@ export default function GroupDetail() {
   };
 
   const scrollY = useRef(new Animated.Value(0)).current;
+  const [headerH, setHeaderH] = useState(280);
+  const headerCollapsed = useRef(false);
 
   const navBg = scrollY.interpolate({
     inputRange: [0, 80],
@@ -273,6 +278,21 @@ export default function GroupDetail() {
   const navShadow = scrollY.interpolate({
     inputRange: [0, 80],
     outputRange: [0, 0.06],
+    extrapolate: 'clamp',
+  });
+  const headerTranslateY = scrollY.interpolate({
+    inputRange: [0, headerH],
+    outputRange: [0, -headerH],
+    extrapolate: 'clamp',
+  });
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, headerH * 0.6, headerH],
+    outputRange: [1, 0.4, 0],
+    extrapolate: 'clamp',
+  });
+  const moduleFlexGrow = scrollY.interpolate({
+    inputRange: [0, headerH],
+    outputRange: [0, 1],
     extrapolate: 'clamp',
   });
 
@@ -289,23 +309,27 @@ export default function GroupDetail() {
         </Pressable>
       </Animated.View>
 
-      <Animated.ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
-        scrollEventThrottle={16}
-        stickyHeaderIndices={[1]}
-      >
-        {/* [0] —— 可折叠顶部信息区 —— */}
-        <View style={[s.headerZone, { paddingTop: insets.top + 50 }]}>
-          {/* 团长卡片 */}
+      {/* ═══ 主内容区：可折叠头部 + 固定商品模块 ═══ */}
+      <View style={{ flex: 1, overflow: 'hidden' }}>
+
+        {/* [0] —— 可折叠顶部信息区(由产品列表滚动驱动收起) —— */}
+        <Animated.View
+          style={[s.headerZone, {
+            paddingTop: insets.top + 50,
+            transform: [{ translateY: headerTranslateY }],
+            opacity: headerOpacity,
+          }]}
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            if (Math.abs(h - headerH) > 2) setHeaderH(h);
+          }}
+        >
           <View style={s.leaderCard}>
             <LinearGradient colors={['#F5F3FF', '#FFF']} style={s.leaderCardBg}>
               <View style={s.leaderRow}>
                 <View style={s.leaderAvatar}>
                   <Text style={s.leaderAvatarText}>{isLeader ? '我' : '团'}</Text>
-          </View>
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.leaderName}>{isLeader ? '我的团' : '团长大人'}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
@@ -324,33 +348,27 @@ export default function GroupDetail() {
                 </Pressable>
               </View>
             </LinearGradient>
-        </View>
-
-          {/* 团信息区 */}
-          <View style={s.infoSection}>
-            <View style={s.infoTitleRow}>
-              <View style={[s.stageBadge, { backgroundColor: stageLabel(group.stage).bg }]}>
-                <Text style={[s.stageBadgeText, { color: stageLabel(group.stage).color }]}>
-                  {stageLabel(group.stage).text}
-                </Text>
           </View>
-              <Text style={s.groupName} numberOfLines={2}>
-                {group.name.replace(/^【[^】]+】[^\s·]*\s*[·]\s*/, '')}
+
+          <View style={s.infoSection}>
+            <Text style={s.groupName} numberOfLines={2}>
+              <Text
+                style={[
+                  s.stageInline,
+                  {
+                    color: stageLabel(group.stage).color,
+                    backgroundColor: stageLabel(group.stage).bg,
+                  },
+                ]}
+              >
+                {' '}{stageLabel(group.stage).text}{' '}
               </Text>
-                  </View>
+              {'  '}
+              {group.name.replace(/^【[^】]+】[^\s·]*\s*[·]\s*/, '')}
+            </Text>
 
             {!!group.description && (
               <Text style={s.groupDesc} numberOfLines={3}>{group.description}</Text>
-            )}
-
-            {!!group.orderRules && (
-              <View style={s.rulesCard}>
-                <View style={s.rulesHeader}>
-                  <Ionicons name="document-text-outline" size={13} color="#F59E0B" />
-                  <Text style={s.rulesTitle}>下单 / 退换规则</Text>
-                </View>
-                <Text style={s.rulesText}>{group.orderRules}</Text>
-              </View>
             )}
 
             <View style={s.metaRow}>
@@ -372,200 +390,261 @@ export default function GroupDetail() {
               </View>
             </View>
 
-            {/* 团长工具：修改状态 + 阶段操作 */}
-            {isLeader && (
-              <View style={s.leaderToolRow}>
-                <Pressable style={s.leaderToolBtn} onPress={() => setStageEditOpen(true)}>
-                  <Ionicons name="create-outline" size={15} color={PURPLE} />
-                  <Text style={[s.leaderToolText, { color: PURPLE }]}>修改状态</Text>
+            {/* —— 快捷操作按钮行 —— */}
+            <View style={s.quickActions}>
+              {isLeader && (
+                <Pressable style={s.qaBtn} onPress={() => setEditMenuOpen(true)}>
+                  <View style={[s.qaBtnIcon, { backgroundColor: '#F5F3FF' }]}>
+                    <Ionicons name="create-outline" size={14} color={PURPLE} />
+                  </View>
+                  <Text style={s.qaBtnText}>编辑</Text>
                 </Pressable>
-                {currentStage === 'deposit_collecting' && (
-                  <Pressable style={s.leaderToolBtn} onPress={() => setCollectConfirmOpen('deposit')}>
-                    <Ionicons name="card-outline" size={15} color="#F43F5E" />
-                    <Text style={[s.leaderToolText, { color: '#F43F5E' }]}>通知收定金</Text>
-                  </Pressable>
-                )}
-                {currentStage === 'final_collecting' && (
-                  <Pressable style={s.leaderToolBtn} onPress={() => setCollectConfirmOpen('final')}>
-                    <Ionicons name="wallet-outline" size={15} color="#A855F7" />
-                    <Text style={[s.leaderToolText, { color: '#A855F7' }]}>通知收尾款</Text>
-                  </Pressable>
-                )}
-                {currentStage === 'shipping' && (
-                  <Pressable
-                    style={s.leaderToolBtn}
-                    onPress={() => router.push({ pathname: '/group/ship-fee' as any, params: { id: group.id } })}
-                  >
-                    <Ionicons name="cube-outline" size={15} color="#D97706" />
-                    <Text style={[s.leaderToolText, { color: '#D97706' }]}>通知补邮费</Text>
-                  </Pressable>
-                )}
-              </View>
-            )}
+              )}
+              {!isCustomGroup && (
+                <Pressable
+                  style={s.qaBtn}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/group/matrix' as any,
+                      params: { id: group.id, view: isLeader ? 'leader' : 'member' },
+                    })
+                  }
+                >
+                  <View style={[s.qaBtnIcon, { backgroundColor: '#FFF1F2' }]}>
+                    <Ionicons name="grid-outline" size={14} color={PINK} />
+                  </View>
+                  <Text style={s.qaBtnText}>拼团情况</Text>
+                </Pressable>
+              )}
+              {isLeader && (
+                <Pressable
+                  style={s.qaBtn}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/orders/in-progress' as any,
+                      params: { groupId: group.id, groupName: group.name },
+                    })
+                  }
+                >
+                  <View style={[s.qaBtnIcon, { backgroundColor: '#ECFDF5' }]}>
+                    <Ionicons name="receipt-outline" size={14} color="#10B981" />
+                  </View>
+                  <Text style={s.qaBtnText}>团订单</Text>
+                </Pressable>
+              )}
+              {!isLeader && (
+                <Pressable
+                  style={s.qaBtn}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/member/orders-ongoing' as any,
+                      params: { groupId: group.id, groupName: group.name },
+                    })
+                  }
+                >
+                  <View style={[s.qaBtnIcon, { backgroundColor: '#ECFDF5' }]}>
+                    <Ionicons name="receipt-outline" size={14} color="#10B981" />
+                  </View>
+                  <Text style={s.qaBtnText}>我的订单</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
+        </Animated.View>
 
-        {/* [1] —— 左右布局：左侧分类 + 右侧商品（sticky） —— */}
-        <View style={[s.mainSection, { height: SCREEN_H - (insets.top + 52) - 70 }]}>
-          {/* 左侧分类栏 */}
-          <ScrollView
-            style={s.sideNav}
-            contentContainerStyle={s.sideNavContent}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            <View style={s.sideList}>
-              {categories.map((c) => {
-                const on = activeCategory === c;
+        {/* [1] —— 商品模块(标题固定 + 左侧分类固定 + 右侧商品独立滚动) —— */}
+        <Animated.View style={[s.productsModule, { flex: 1, transform: [{ translateY: headerTranslateY }] }]}>
+          {/* 左侧分类固定 + 右侧商品独立滚动 */}
+          <View style={s.productsRow}>
+            {/* 左侧分类栏 · 始终可见,分类多时自身可滚 */}
+            <View style={s.sideNav}>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                <View style={s.sideList}>
+                  {categories.map((c) => {
+                    const on = activeCategory === c;
+                    return (
+                      <Pressable key={c} style={[s.sideItem, on && s.sideItemOn]} onPress={() => setActiveCategory(c)}>
+                        {on && <View style={s.sideBar} />}
+                        <Text style={[s.sideText, on && s.sideTextOn]} numberOfLines={2}>{c}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* 右侧商品列表 · 独立滚动,滚动驱动顶部信息区折叠 */}
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ padding: 8, paddingBottom: 120 }}
+              showsVerticalScrollIndicator={false}
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                { useNativeDriver: false },
+              )}
+              scrollEventThrottle={16}
+            >
+              {filteredProducts.map((p, idx) => {
+                const mult = isCustomGroup ? 1.0 : [1.5, 1.2, 1.0, 0.9, 0.8][idx % 5];
                 return (
-                  <Pressable key={c} style={[s.sideItem, on && s.sideItemOn]} onPress={() => setActiveCategory(c)}>
-                    {on && <View style={s.sideBar} />}
-                    <Text style={[s.sideText, on && s.sideTextOn]} numberOfLines={2}>{c}</Text>
-                  </Pressable>
+                  <ProductTile
+                    key={p.id}
+                    product={p}
+                    priceMultiplier={mult}
+                    qty={cart[p.id] ?? 0}
+                    onAdd={() => tryAddProduct(p.id, mult)}
+                    onSub={() => updateCart(p.id, -1)}
+                    isLeader={isLeader}
+                    showHeat={!isCustomGroup}
+                    frozen={!isLeader && currentStage !== 'gathering'}
+                    onPreviewImage={() =>
+                      setPreviewImg({
+                        source: p.image ? { uri: p.image } : PLACEHOLDER_IMG,
+                        name: p.name,
+                        price: Math.round(p.price * mult * 10) / 10,
+                      })
+                    }
+                  />
                 );
               })}
-            </View>
-          </ScrollView>
-
-          {/* 右侧商品列表 */}
-          <ScrollView
-            style={s.productsCol}
-            contentContainerStyle={s.productsContent}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            {filteredProducts.map((p, idx) => {
-              const mult = [1.5, 1.2, 1.0, 0.9, 0.8][idx % 5];
-              return (
-                <ProductTile
-                  key={p.id}
-                  product={p}
-                  priceMultiplier={mult}
-                  qty={cart[p.id] ?? 0}
-                  onAdd={() => tryAddProduct(p.id, mult)}
-                  onSub={() => updateCart(p.id, -1)}
-                  isLeader={isLeader}
-                />
-              );
-            })}
-            {filteredProducts.length === 0 && (
-              <View style={{ alignItems: 'center', paddingVertical: 48 }}>
-                <Ionicons name="cube-outline" size={36} color="#E5E7EB" />
-                <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 13 }}>该分类暂无商品</Text>
-        </View>
-            )}
-          </ScrollView>
-        </View>
-      </Animated.ScrollView>
-
-      {/* —— 底部按钮区 —— */}
-      {isLeader ? (
-        <View style={[s.bottomBar, { paddingBottom: 10 + insets.bottom, gap: 6 }]}>
-          <Pressable style={s.btn} onPress={() => setEditMenuOpen(true)}>
-            <Ionicons name="create-outline" size={18} color={PURPLE} />
-            <Text style={s.btnLabel}>编辑</Text>
-          </Pressable>
-          <Pressable
-            style={s.btn}
-            onPress={() =>
-              router.push({
-                pathname: '/group/matrix' as any,
-                params: { id: group.id, view: 'leader' },
-              })
-            }
-          >
-            <Ionicons name="grid-outline" size={18} color={PURPLE} />
-            <Text style={s.btnLabel}>拼团情况</Text>
-          </Pressable>
-          <Pressable
-            style={s.btn}
-            onPress={() =>
-              router.push({
-                pathname: '/orders/in-progress' as any,
-                params: { groupId: group.id, groupName: group.name },
-              })
-            }
-          >
-            <Ionicons name="receipt-outline" size={18} color={PURPLE} />
-            <Text style={s.btnLabel}>我的订单</Text>
-          </Pressable>
-
-          {/* —— 团长加购后的占位下单 CTA —— */}
-          <Pressable
-            style={[s.btnPrimary, cartCount === 0 && { opacity: 0.4 }]}
-            disabled={cartCount === 0}
-            onPress={() => setOrderDoneOpen(true)}
-          >
-            <LinearGradient
-              colors={cartCount > 0 ? [PURPLE, '#A855F7'] : ['#9CA3AF', '#9CA3AF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={s.btnPrimaryInner}
-            >
-              <Ionicons name={cartCount > 0 ? 'checkmark-circle' : 'cart-outline'} size={16} color="#FFF" />
-              <Text style={s.btnPrimaryText}>
-                {cartCount > 0 ? `去下单 ${cartCount}` : '去下单'}
-              </Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-      ) : (
-        <View style={[s.bottomBar, { paddingBottom: 10 + insets.bottom, gap: 6 }]}>
-          <Pressable
-            style={s.btnSmall}
-            onPress={() =>
-              router.push({
-                pathname: '/group/matrix' as any,
-                params: { id: group.id, view: 'member' },
-              })
-            }
-          >
-            <Ionicons name="grid-outline" size={16} color={PURPLE} />
-            <Text style={s.btnSmallLabel}>拼团情况</Text>
-          </Pressable>
-          <Pressable
-            style={s.btnSmall}
-            onPress={() =>
-              router.push({
-                pathname: '/member/orders-ongoing' as any,
-                params: { groupId: group.id, groupName: group.name },
-              })
-            }
-          >
-            <Ionicons name="receipt-outline" size={16} color={PURPLE} />
-            <Text style={s.btnSmallLabel}>我的订单</Text>
-          </Pressable>
-          <View style={s.cartSummary}>
-            <Text style={s.cartCount}>
-              已选 <Text style={{ color: PINK, fontWeight: '800' }}>{cartCount}</Text>
-              {cartShipping > 0 && (
-                <Text style={{ color: '#9CA3AF', fontSize: 10 }}> · 含邮 ¥{cartShipping}</Text>
+              {filteredProducts.length === 0 && (
+                <View style={{ alignItems: 'center', paddingVertical: 48 }}>
+                  <Ionicons name="cube-outline" size={36} color="#E5E7EB" />
+                  <Text style={{ color: '#9CA3AF', marginTop: 10, fontSize: 13 }}>该分类暂无商品</Text>
+                </View>
               )}
-              {shipping.kind === 'free' && cartCount > 0 && (
-                <Text style={{ color: '#10B981', fontSize: 10 }}> · 包邮</Text>
-              )}
-            </Text>
-            <Text style={s.cartTotal}>¥{cartTotal.toFixed(0)}</Text>
+            </ScrollView>
           </View>
-          <Pressable
-            style={[s.btnPrimary, cartCount === 0 && { opacity: 0.4 }]}
-            disabled={cartCount === 0}
-            onPress={() => {
-              markPlaced(group.id, cartCount);
-              setOrderDoneOpen(true);
-            }}
-          >
-            <LinearGradient
-              colors={[PINK, '#FB7185']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={s.btnPrimaryInner}
-            >
-              <Text style={s.btnPrimaryText}>去下单</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-      )}
+        </Animated.View>
+      </View>
+
+      {/* —— 底部购物车 & 下单区 —— */}
+      {(() => {
+        const canOrder = isLeader || currentStage === 'gathering';
+        const isLocked = !isLeader && currentStage !== 'gathering';
+        const cartItems = group.products.filter((p) => (cart[p.id] ?? 0) > 0);
+        return (
+          <>
+            {/* 购物车展开遮罩 */}
+            {cartOpen && cartItems.length > 0 && (
+              <Pressable style={s.cartOverlay} onPress={() => setCartOpen(false)} />
+            )}
+
+            {/* 购物车面板 + 底部条 一体 */}
+            <View style={{ zIndex: 91 }}>
+              {cartOpen && cartItems.length > 0 && (
+                <View style={s.cartPanel}>
+                  <View style={s.cartPanelHeader}>
+                    <Text style={s.cartPanelTitle}>购物车</Text>
+                    <Pressable
+                      onPress={() => {
+                        setCart({});
+                        setCartOpen(false);
+                      }}
+                      hitSlop={8}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Ionicons name="trash-outline" size={14} color="#9CA3AF" />
+                        <Text style={{ fontSize: 12, color: '#9CA3AF' }}>清空</Text>
+                      </View>
+                    </Pressable>
+                  </View>
+                  <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                    {cartItems.map((p) => {
+                      const qty = cart[p.id] ?? 0;
+                      const displayPrice = productPriceMap.get(p.id) ?? p.price;
+                      return (
+                        <View key={p.id} style={s.cartItem}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.cartItemName} numberOfLines={1}>{p.name}</Text>
+                            <Text style={s.cartItemPrice}>¥{displayPrice.toFixed(1)}</Text>
+                          </View>
+                          <View style={s.cartItemQty}>
+                            <Pressable style={s.cartQtyBtn} onPress={() => updateCart(p.id, -1)}>
+                              <Ionicons name="remove" size={14} color={PURPLE} />
+                            </Pressable>
+                            <Text style={s.cartQtyText}>{qty}</Text>
+                            <Pressable style={s.cartQtyBtn} onPress={() => updateCart(p.id, 1)}>
+                              <Ionicons name="add" size={14} color={PURPLE} />
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* 底部条 */}
+              <View style={[s.bottomCartBar, { paddingBottom: Math.max(10, insets.bottom) }]}>
+                {isLocked ? (
+                  <View style={s.lockedSummary}>
+                    <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
+                    <Text style={s.lockedText}>
+                      已锁定 {cartCount} 件 · ¥{cartTotal.toFixed(0)}
+                    </Text>
+                    <Text style={s.lockedHint}>
+                      {currentStage === 'deposit_collecting' ? '等待付定金' :
+                       currentStage === 'final_collecting' ? '等待补尾款' :
+                       currentStage === 'full_collecting' ? '等待付全款' :
+                       currentStage === 'shipping' ? '等待发货' : '已结束'}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Pressable
+                      style={s.cartBtnWrap}
+                      onPress={() => cartCount > 0 && setCartOpen(!cartOpen)}
+                    >
+                      <View style={s.cartIconWrap}>
+                        <Ionicons name="cart" size={22} color={cartCount > 0 ? '#FFF' : '#9CA3AF'} />
+                        {cartCount > 0 && (
+                          <View style={s.cartBadge}>
+                            <Text style={s.cartBadgeText}>{cartCount}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                    <Pressable style={s.cartTotalWrap} onPress={() => cartCount > 0 && setCartOpen(!cartOpen)}>
+                      <Text style={s.cartBarTotal}>
+                        ¥<Text style={{ fontSize: 18, fontWeight: '800' }}>{cartTotal.toFixed(0)}</Text>
+                      </Text>
+                      {cartShipping > 0 && (
+                        <Text style={s.cartBarShipping}>含邮 ¥{cartShipping}</Text>
+                      )}
+                      {shipping.kind === 'free' && cartCount > 0 && (
+                        <Text style={[s.cartBarShipping, { color: '#10B981' }]}>包邮</Text>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      style={[s.cartSubmitBtn, cartCount === 0 && { opacity: 0.4 }]}
+                      disabled={cartCount === 0}
+                      onPress={() => {
+                        if (!isLeader) markPlaced(group.id, cartCount);
+                        setOrderDoneOpen(true);
+                      }}
+                    >
+                      <LinearGradient
+                        colors={isLeader
+                          ? (cartCount > 0 ? [PURPLE, '#A855F7'] : ['#9CA3AF', '#9CA3AF'])
+                          : (cartCount > 0 ? [PINK, '#FB7185'] : ['#9CA3AF', '#9CA3AF'])
+                        }
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={s.cartSubmitInner}
+                      >
+                        <Text style={s.cartSubmitText}>
+                          {isLeader ? '去下单' : '去占位'}
+                        </Text>
+                      </LinearGradient>
+                    </Pressable>
+                  </>
+                )}
+              </View>
+            </View>
+          </>
+        );
+      })()}
 
       {/* —— 编辑二级选择 弹层 —— */}
       <Modal visible={editMenuOpen} transparent animationType="fade" onRequestClose={() => setEditMenuOpen(false)}>
@@ -740,10 +819,14 @@ export default function GroupDetail() {
           <Pressable style={stageS.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={stageS.handle} />
             <Text style={stageS.title}>修改团状态</Text>
-            <Text style={stageS.sub}>状态流转:凑车中 → 收定金 → 收尾款 → 发货中 → 已截团</Text>
+            <Text style={stageS.sub}>
+              {group.payMode === 'full'
+                ? '状态流转: 凑车中 → 收款中 → 发货中 → 已截团'
+                : '状态流转: 凑车中 → 收定金 → 收尾款 → 发货中 → 已截团'}
+            </Text>
 
             <ScrollView style={{ maxHeight: 420, marginTop: 12 }}>
-              {STAGE_OPTIONS.map((opt) => {
+              {(group.payMode === 'full' ? FULL_STAGE_OPTIONS : DEPOSIT_STAGE_OPTIONS).map((opt) => {
                 const active = currentStage === opt.value;
                 return (
                   <Pressable
@@ -971,20 +1054,55 @@ export default function GroupDetail() {
         </Pressable>
       </Modal>
 
+      {/* —— 商品图片放大预览 —— */}
+      <Modal visible={!!previewImg} transparent animationType="fade" onRequestClose={() => setPreviewImg(null)}>
+        <Pressable style={previewS.overlay} onPress={() => setPreviewImg(null)}>
+          <Pressable style={previewS.imgWrap} onPress={(e) => e.stopPropagation()}>
+            {previewImg && (
+              <Image source={previewImg.source} style={previewS.img} resizeMode="contain" />
+            )}
+          </Pressable>
+          {previewImg && (
+            <View style={previewS.captionRow} pointerEvents="none">
+              <View style={previewS.captionInner}>
+                <Text style={previewS.captionName} numberOfLines={2}>{previewImg.name}</Text>
+                <Text style={previewS.captionPrice}>¥{previewImg.price.toFixed(0)}</Text>
+              </View>
+            </View>
+          )}
+          <Pressable
+            style={previewS.closeBtn}
+            hitSlop={12}
+            onPress={() => setPreviewImg(null)}
+          >
+            <Ionicons name="close" size={22} color="#FFF" />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* —— 下单成功反馈：团员=凑车成功 / 团长=占位成功 —— */}
       <Modal visible={orderDoneOpen} transparent animationType="fade" onRequestClose={() => setOrderDoneOpen(false)}>
         <Pressable style={doneS.overlay} onPress={() => setOrderDoneOpen(false)}>
           <Pressable style={doneS.card} onPress={(e) => e.stopPropagation()}>
             <View style={[doneS.celebrate, isLeader && { backgroundColor: '#FFF1F2' }]}>
-              <Text style={{ fontSize: 38 }}>{isLeader ? '🎯' : '🚗'}</Text>
+              <Text style={{ fontSize: 38 }}>{isLeader ? (isCustomGroup ? '🛒' : '🎯') : '🚗'}</Text>
             </View>
-            <Text style={doneS.title}>{isLeader ? '占位成功' : '已加入凑车池'}</Text>
+            <Text style={doneS.title}>
+              {isLeader ? (isCustomGroup ? '下单成功' : '占位成功') : '已加入凑车池'}
+            </Text>
             <Text style={doneS.sub}>
               {isLeader ? (
-                <>
-                  团长已占位 {cartCount} 件 · 头像将出现在
-                  <Text style={{ color: PURPLE, fontWeight: '700' }}> 拼团情况</Text> 排单中
-                </>
+                isCustomGroup ? (
+                  <>
+                    团长已下单 {cartCount} 件 · 已自动加入
+                    <Text style={{ color: PURPLE, fontWeight: '700' }}> 我的订单</Text>
+                  </>
+                ) : (
+                  <>
+                    团长已占位 {cartCount} 件 · 头像将出现在
+                    <Text style={{ color: PURPLE, fontWeight: '700' }}> 拼团情况</Text> 排单中
+                  </>
+                )
               ) : (
                 <>
                   {cartCount} 件已上车 · 订单状态
@@ -995,24 +1113,47 @@ export default function GroupDetail() {
 
             <View style={doneS.statCard}>
               {isLeader ? (
-                <>
-                  <View style={doneS.statRow}>
-                    <Text style={doneS.statLabel}>占位件数</Text>
-                    <Text style={[doneS.statValue, { color: PURPLE }]}>{cartCount} 件</Text>
-                  </View>
-                  <View style={doneS.statRow}>
-                    <Text style={doneS.statLabel}>需付款金额</Text>
-                    <Text style={[doneS.statValue, { color: '#10B981' }]}>¥0 · 免付款</Text>
-                  </View>
-                  <View style={doneS.statRow}>
-                    <Text style={doneS.statLabel}>排单显示</Text>
-                    <Text style={doneS.statValueSmall}>团长头像 + 「团长占位」标签</Text>
-                  </View>
-                  <View style={doneS.statRow}>
-                    <Text style={doneS.statLabel}>用途</Text>
-                    <Text style={doneS.statValueSmall}>占冷门 SKU / 帮散车快速凑齐</Text>
-                  </View>
-                </>
+                isCustomGroup ? (
+                  <>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>下单件数</Text>
+                      <Text style={[doneS.statValue, { color: PURPLE }]}>{cartCount} 件</Text>
+                    </View>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>商品金额</Text>
+                      <Text style={doneS.statValueSmall}>¥{cartGoods.toFixed(0)}</Text>
+                    </View>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>邮费</Text>
+                      <Text style={doneS.statValueSmall}>
+                        {shipping.kind === 'free' ? '包邮' : `+ ¥${cartShipping}（${shipping.label}）`}
+                      </Text>
+                    </View>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>合计</Text>
+                      <Text style={[doneS.statValue, { color: '#F43F5E' }]}>¥{cartTotal.toFixed(0)}</Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>占位件数</Text>
+                      <Text style={[doneS.statValue, { color: PURPLE }]}>{cartCount} 件</Text>
+                    </View>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>需付款金额</Text>
+                      <Text style={[doneS.statValue, { color: '#10B981' }]}>¥0 · 免付款</Text>
+                    </View>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>排单显示</Text>
+                      <Text style={doneS.statValueSmall}>团长头像 + 「团长占位」标签</Text>
+                    </View>
+                    <View style={doneS.statRow}>
+                      <Text style={doneS.statLabel}>用途</Text>
+                      <Text style={doneS.statValueSmall}>占冷门 SKU / 帮散车快速凑齐</Text>
+                    </View>
+                  </>
+                )
               ) : (
                 <>
                   <View style={doneS.statRow}>
@@ -1040,9 +1181,15 @@ export default function GroupDetail() {
             <View style={doneS.tipBox}>
               <Ionicons name="shield-checkmark-outline" size={14} color={PURPLE} />
               <Text style={doneS.tipText}>
-                <Text style={{ fontWeight: '700', color: PURPLE }}>{isLeader ? '团长占位说明：' : 'V1 保障：'}</Text>
+                <Text style={{ fontWeight: '700', color: PURPLE }}>
+                  {isLeader
+                    ? isCustomGroup ? '自制团说明：' : '团长占位说明：'
+                    : 'V1 保障：'}
+                </Text>
                 {isLeader
-                  ? '团长占位 不参与扣款 / 排表上以「团长占位」展示，可随时取消，方便帮团员凑齐'
+                  ? isCustomGroup
+                    ? '自制团团长下单即视为正式订单，可在「我的订单」里查看与管理'
+                    : '团长占位 不参与扣款 / 排表上以「团长占位」展示，可随时取消，方便帮团员凑齐'
                   : '没付款就不付款，凑不齐自动无需退款'}
               </Text>
             </View>
@@ -1058,14 +1205,27 @@ export default function GroupDetail() {
                 style={doneS.btnPrimary}
                 onPress={() => {
                   setOrderDoneOpen(false);
-                  router.push({
-                    pathname: '/group/matrix' as any,
-                    params: { id: group.id, view: isLeader ? 'leader' : 'member' },
-                  });
+                  if (isLeader && isCustomGroup) {
+                    router.push({
+                      pathname: '/orders/in-progress' as any,
+                      params: { groupId: group.id, groupName: group.name },
+                    });
+                  } else {
+                    router.push({
+                      pathname: '/group/matrix' as any,
+                      params: { id: group.id, view: isLeader ? 'leader' : 'member' },
+                    });
+                  }
                 }}
               >
-                <Ionicons name="grid-outline" size={14} color="#FFF" />
-                <Text style={doneS.btnPrimaryText}>查看排单</Text>
+                <Ionicons
+                  name={isLeader && isCustomGroup ? 'receipt-outline' : 'grid-outline'}
+                  size={14}
+                  color="#FFF"
+                />
+                <Text style={doneS.btnPrimaryText}>
+                  {isLeader && isCustomGroup ? '查看订单' : '查看排单'}
+                </Text>
               </Pressable>
             </View>
           </Pressable>
@@ -1085,7 +1245,7 @@ type StageOption = {
   bg: string;
 };
 
-const STAGE_OPTIONS: StageOption[] = [
+const DEPOSIT_STAGE_OPTIONS: StageOption[] = [
   { value: 'gathering',          label: '凑车中', desc: '团员可下单 / 修改订单 · 暂不收款',                 icon: 'people-outline',      color: '#3B82F6', bg: '#EFF6FF' },
   { value: 'deposit_collecting', label: '收定金', desc: '团长通知团员付定金 · 定金到账后保留排位',           icon: 'card-outline',        color: '#F43F5E', bg: '#FFF1F2' },
   { value: 'final_collecting',   label: '收尾款', desc: '团长通知补尾款 · 补齐后等待到货与发货',             icon: 'wallet-outline',      color: '#A855F7', bg: '#F5F3FF' },
@@ -1093,34 +1253,47 @@ const STAGE_OPTIONS: StageOption[] = [
   { value: 'closed',             label: '已截团', desc: '本团结束 · 不再接单 / 不再补款',                    icon: 'lock-closed-outline', color: '#7C3AED', bg: '#F5F3FF' },
 ];
 
-/* GroupProgressBar removed — status shown in stageBadge, tools in leaderToolRow */
+const FULL_STAGE_OPTIONS: StageOption[] = [
+  { value: 'gathering',          label: '凑车中', desc: '团员可下单 / 修改订单 · 暂不收款',                 icon: 'people-outline',      color: '#3B82F6', bg: '#EFF6FF' },
+  { value: 'full_collecting',    label: '收款中', desc: '团长通知团员付全款 · 付款后等待发货',               icon: 'card-outline',        color: '#F43F5E', bg: '#FFF1F2' },
+  { value: 'shipping',           label: '发货中', desc: '已能确认收货地址 · 此阶段才允许发起补邮费',         icon: 'cube-outline',        color: '#0EA5E9', bg: '#E0F2FE' },
+  { value: 'closed',             label: '已截团', desc: '本团结束 · 不再接单 / 不再补款',                    icon: 'lock-closed-outline', color: '#7C3AED', bg: '#F5F3FF' },
+];
+
+/* GroupProgressBar removed — status 内联到 groupName 标题前缀 (s.stageInline) · tools in leaderToolRow */
 
 /* —————————————————— 商品卡 —————————————————— */
 
 function ProductTile({
-  product, priceMultiplier, qty, onAdd, onSub, isLeader,
+  product, priceMultiplier, qty, onAdd, onSub, isLeader, showHeat = true, onPreviewImage,
+  frozen = false,
 }: {
   product: Product; priceMultiplier: number; qty: number;
   onAdd: () => void; onSub: () => void; isLeader: boolean;
+  showHeat?: boolean;
+  onPreviewImage?: () => void;
+  frozen?: boolean;
 }) {
   const finalPrice = Math.round(product.price * priceMultiplier * 10) / 10;
-  const heatLabel = priceMultiplier >= 1.3 ? '热门' : priceMultiplier <= 0.9 ? '可爱' : '常规';
-  const heatColor = priceMultiplier >= 1.3 ? '#F43F5E' : priceMultiplier <= 0.9 ? '#3B82F6' : '#9CA3AF';
+  const heatLabel = priceMultiplier >= 1.5 ? '热门' : '常规';
+  const heatColor = priceMultiplier >= 1.5 ? '#F43F5E' : '#9CA3AF';
+  const imgSource = product.image ? { uri: product.image } : PLACEHOLDER_IMG;
 
   return (
     <View style={tileS.card}>
-      <View style={tileS.imgWrap}>
-        <Image source={PLACEHOLDER_IMG} style={tileS.img} resizeMode="cover" />
-        {/* 调价标签 */}
-        <View style={[tileS.adjustTag, { backgroundColor: heatColor }]}>
-          <Text style={tileS.adjustTagText}>×{priceMultiplier.toFixed(1)}</Text>
+      <Pressable style={tileS.imgWrap} onPress={onPreviewImage} hitSlop={4}>
+        <Image source={imgSource} style={tileS.img} resizeMode="cover" />
+        {/* 调价标签(自制团不展示) */}
+        {showHeat && (
+          <View style={[tileS.adjustTag, { backgroundColor: heatColor }]}>
+            <Text style={tileS.adjustTagText}>×{priceMultiplier.toFixed(1)}</Text>
+          </View>
+        )}
+        {/* 右下角放大角标(提示可点) */}
+        <View style={tileS.zoomBadge}>
+          <Ionicons name="expand-outline" size={11} color="#FFF" />
         </View>
-        {/* 状态标签 */}
-        <View style={tileS.statusTag}>
-          <View style={[tileS.statusDot, { backgroundColor: '#10B981' }]} />
-          <Text style={tileS.statusText}>现货</Text>
-        </View>
-      </View>
+      </Pressable>
 
       <View style={tileS.body}>
         <Text style={tileS.name} numberOfLines={2}>{product.name}</Text>
@@ -1129,14 +1302,29 @@ function ProductTile({
             <Text style={tileS.priceUnit}>¥</Text>{finalPrice.toFixed(0)}
             <Text style={tileS.priceDecimal}>.{(finalPrice * 10) % 10}</Text>
           </Text>
-          <Text style={tileS.priceOriginal}>原 ¥{product.price}</Text>
+          {/* 自制团没调价 划线原价没意义,只在有冷热时展示 */}
+          {showHeat && <Text style={tileS.priceOriginal}>原 ¥{product.price}</Text>}
         </View>
         <View style={tileS.bottomRow}>
-          <View style={[tileS.heatPill, { backgroundColor: heatColor + '18' }]}>
-            <Text style={[tileS.heatText, { color: heatColor }]}>{heatLabel}</Text>
+          <View style={tileS.tagGroup}>
+            {showHeat && (
+              <View style={[tileS.heatPill, { backgroundColor: heatColor + '18' }]}>
+                <Text style={[tileS.heatText, { color: heatColor }]}>{heatLabel}</Text>
+              </View>
+            )}
+            <View style={tileS.statusTag}>
+              <View style={[tileS.statusDot, { backgroundColor: '#10B981' }]} />
+              <Text style={tileS.statusText}>现货</Text>
+            </View>
           </View>
 
-          {qty > 0 ? (
+          {frozen ? (
+            qty > 0 ? (
+              <View style={[tileS.stepper, { opacity: 0.5 }]}>
+                <Text style={[tileS.stepQty, { paddingHorizontal: 8, color: '#9CA3AF' }]}>×{qty}</Text>
+              </View>
+            ) : null
+          ) : qty > 0 ? (
             <View style={tileS.stepper}>
               <Pressable style={tileS.stepBtn} onPress={onSub}>
                 <Ionicons name="remove" size={14} color={PURPLE} />
@@ -1326,20 +1514,16 @@ const s = StyleSheet.create({
     borderRadius: 16, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14,
     shadowColor: '#1E1B4B', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
-  infoTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  stageBadge: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 2,
+  /** 状态徽章已"内联"到 groupName 标题前缀里(s.stageInline),
+   *  不再用独立的 row + chip,让状态与团名视觉上合二为一。*/
+  stageInline: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    borderRadius: 5,
   },
-  stageBadgeText: { fontSize: 11, fontWeight: '700' },
-  groupName: { fontSize: 17, fontWeight: '800', color: '#1E1B4B', flex: 1, lineHeight: 24 },
+  groupName: { fontSize: 17, fontWeight: '800', color: '#1E1B4B', lineHeight: 26 },
   groupDesc: { fontSize: 13, color: '#6B7280', marginTop: 8, lineHeight: 20 },
-  rulesCard: {
-    marginTop: 10, padding: 10, backgroundColor: '#FFFBEB',
-    borderRadius: 10, borderWidth: 1, borderColor: '#FDE68A',
-  },
-  rulesHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-  rulesTitle: { fontSize: 11, fontWeight: '700', color: '#D97706' },
-  rulesText: { fontSize: 11.5, color: '#92400E', lineHeight: 17 },
   metaRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap',
     marginTop: 10, paddingTop: 10,
@@ -1397,16 +1581,31 @@ const s = StyleSheet.create({
   leaderToolText: { fontSize: 12, fontWeight: '600' },
 
   // —— 左右布局 ——
-  mainSection: {
-    flexDirection: 'row', backgroundColor: '#FFF', overflow: 'hidden',
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F0F0F5',
+  // —— 商品模块卡片 —— //
+  productsModule: {
+    marginHorizontal: 12, marginTop: 8,
+    backgroundColor: '#FFF', borderTopLeftRadius: 18, borderTopRightRadius: 18,
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#EEEAF5', borderBottomWidth: 0,
+    shadowColor: '#1E1B4B', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
+  productsModuleHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#FAFAFE',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F0F0F5',
+  },
+  productsModuleTitleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  productsModuleTitle: { fontSize: 13, fontWeight: '800', color: '#1E1B4B' },
+  productsModuleHint: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  productsModuleHintText: { fontSize: 10.5, color: '#9CA3AF', fontWeight: '600' },
+  productsRow: { flexDirection: 'row', flex: 1 },
   sideNav: {
     width: 68, flexBasis: 68, flexGrow: 0, flexShrink: 0,
+    paddingTop: 6, paddingBottom: 6,
     backgroundColor: '#F8F7FB',
     borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#EEEAF5',
   },
-  sideNavContent: { paddingVertical: 6 },
   sideList: { gap: 2 },
   sideItem: {
     minHeight: 46, justifyContent: 'center',
@@ -1420,8 +1619,10 @@ const s = StyleSheet.create({
   },
   sideText: { fontSize: 12.5, lineHeight: 17, color: '#8F8A99', fontWeight: '500' },
   sideTextOn: { color: '#1E1B4B', fontWeight: '800' },
-  productsCol: { flex: 1, flexBasis: 0, flexShrink: 1, minWidth: 0, backgroundColor: '#FFF' },
-  productsContent: { width: '100%', padding: 8, paddingBottom: 80 },
+  productsCol: {
+    flex: 1, flexBasis: 0, flexShrink: 1, minWidth: 0,
+    backgroundColor: '#FFF',
+  },
 
   // —— 一键收款 · 二次确认 Modal ——
   collectModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28 },
@@ -1441,30 +1642,78 @@ const s = StyleSheet.create({
   collectModalBtnPrimary: { flex: 1.4, paddingVertical: 12, borderRadius: 12, backgroundColor: PINK, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
   collectModalBtnPrimaryText: { fontSize: 13, fontWeight: '800', color: '#FFF' },
 
-  // (placeholder)
+  // —— 快捷操作行（上方） ——
+  quickActions: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    marginTop: 14, paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F3F4F6',
+  },
+  qaBtn: { alignItems: 'center', gap: 5, minWidth: 50 },
+  qaBtnIcon: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  qaBtnText: { fontSize: 10, fontWeight: '600', color: '#4B5563' },
 
-  // —— 底部按钮 ——
-  bottomBar: {
-    position: 'absolute', left: 0, right: 0, bottom: 0,
+  // —— 底部购物车栏 ——
+  cartOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 90, justifyContent: 'flex-end',
+  },
+  cartPanel: {
+    backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 16, paddingTop: 16,
+  },
+  cartPanelHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cartPanelTitle: { fontSize: 15, fontWeight: '800', color: '#1E1B4B' },
+  cartItem: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingTop: 10,
-    backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F3F4F6',
-    shadowColor: '#1E1B4B', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: -4 }, elevation: 10,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F3F4F6',
   },
-  btn: {
-    flexDirection: 'column', alignItems: 'center', gap: 2,
-    paddingHorizontal: 4, paddingVertical: 4,
-    minWidth: 48,
+  cartItemName: { fontSize: 13, fontWeight: '600', color: '#1E1B4B', marginBottom: 2 },
+  cartItemPrice: { fontSize: 14, fontWeight: '800', color: PINK },
+  cartItemQty: { flexDirection: 'row', alignItems: 'center', gap: 0 },
+  cartQtyBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: '#E9D5FF',
   },
-  btnLabel: { fontSize: 10, fontWeight: '600', color: PURPLE },
-  btnSmall: {
-    flexDirection: 'column', alignItems: 'center', gap: 1,
-    paddingHorizontal: 4, paddingVertical: 4,
-    minWidth: 44,
-  },
-  btnSmallLabel: { fontSize: 9, fontWeight: '600', color: PURPLE },
+  cartQtyText: { width: 28, textAlign: 'center', fontSize: 14, fontWeight: '700', color: '#1E1B4B' },
 
-  // —— 团员加购 Toast 「已加入拼团池」 ——
+  bottomCartBar: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingTop: 8,
+    backgroundColor: '#1E1B4B', borderTopLeftRadius: 18, borderTopRightRadius: 18,
+  },
+  cartBtnWrap: { paddingHorizontal: 8, paddingVertical: 6 },
+  cartIconWrap: { position: 'relative' },
+  cartBadge: {
+    position: 'absolute', top: -5, right: -8,
+    backgroundColor: PINK, borderRadius: 9, minWidth: 18, height: 18,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4,
+  },
+  cartBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFF' },
+  cartTotalWrap: { flex: 1, paddingLeft: 8 },
+  cartBarTotal: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+  cartBarShipping: { fontSize: 10, color: '#9CA3AF' },
+  cartSubmitBtn: { borderRadius: 20, overflow: 'hidden', minWidth: 88 },
+  cartSubmitInner: {
+    paddingHorizontal: 20, paddingVertical: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cartSubmitText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+  lockedSummary: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 14, justifyContent: 'center',
+  },
+  lockedText: { fontSize: 13, fontWeight: '600', color: '#9CA3AF' },
+  lockedHint: { fontSize: 11, color: '#6B7280' },
+
+  // —— 团员加购 Toast ——
   toastWrap: {
     position: 'absolute', left: 24, right: 24,
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1480,23 +1729,6 @@ const s = StyleSheet.create({
   },
   toastTitle: { fontSize: 13, fontWeight: '700', color: '#FFF' },
   toastSub:   { fontSize: 11, color: '#C4B5FD', marginTop: 2 },
-
-  btnPrimary: { flex: 1, borderRadius: 24, overflow: 'hidden', minWidth: 100 },
-  btnPrimaryInner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    paddingVertical: 13,
-  },
-  btnPrimaryText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
-
-  cartSummary: { flex: 1, paddingLeft: 8 },
-  cartCount: { fontSize: 11, color: '#6B7280' },
-  cartTotal: { fontSize: 18, fontWeight: '800', color: '#1E1B4B' },
-  freeTag: {
-    fontSize: 10, color: '#10B981',
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4,
-    fontWeight: '700', overflow: 'hidden',
-  },
 });
 
 const tileS = StyleSheet.create({
@@ -1517,15 +1749,20 @@ const tileS = StyleSheet.create({
     borderRadius: 6,
   },
   adjustTagText: { fontSize: 9, fontWeight: '800', color: '#FFF' },
+  zoomBadge: {
+    position: 'absolute', bottom: 4, right: 4,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(30,27,75,0.65)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   statusTag: {
-    position: 'absolute', bottom: 4, left: 4,
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingHorizontal: 5, paddingVertical: 1,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: 6,
   },
   statusDot: { width: 5, height: 5, borderRadius: 3 },
-  statusText: { fontSize: 9, fontWeight: '700', color: '#1E1B4B' },
+  statusText: { fontSize: 9, fontWeight: '700', color: '#059669' },
 
   body: { flex: 1, justifyContent: 'space-between' },
   name: { fontSize: 13, fontWeight: '600', color: '#1E1B4B', lineHeight: 18 },
@@ -1534,7 +1771,8 @@ const tileS = StyleSheet.create({
   priceUnit: { fontSize: 11, fontWeight: '700' },
   priceDecimal: { fontSize: 11, fontWeight: '700' },
   priceOriginal: { fontSize: 10, color: '#9CA3AF', textDecorationLine: 'line-through' },
-  bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  bottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
+  tagGroup: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
 
   heatPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   heatText: { fontSize: 9, fontWeight: '700' },
@@ -1841,4 +2079,43 @@ const shipFeeS = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'center', gap: 6,
   },
   confirmText: { fontSize: 14, fontWeight: '700', color: '#FFF' },
+});
+
+// —— 商品图片放大预览 Modal 样式 ——
+const previewS = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,12,40,0.92)',
+    alignItems: 'center', justifyContent: 'center',
+    padding: 20,
+  },
+  imgWrap: {
+    width: '92%',
+    aspectRatio: 1,
+    maxWidth: 520, maxHeight: 520,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  img: { width: '100%', height: '100%' },
+  captionRow: {
+    position: 'absolute', left: 0, right: 0, bottom: 24,
+    alignItems: 'center', paddingHorizontal: 24,
+  },
+  captionInner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 18,
+    maxWidth: '100%',
+  },
+  captionName: { fontSize: 13, fontWeight: '700', color: '#1E1B4B', flexShrink: 1 },
+  captionPrice: { fontSize: 14, fontWeight: '800', color: '#F43F5E' },
+  closeBtn: {
+    position: 'absolute', top: 36, right: 18,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+  },
 });

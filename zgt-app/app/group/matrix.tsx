@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStore } from '../../src/store/useStore';
 import { useRole } from '../../src/store/useRole';
 import { useMemberOrders } from '../../src/store/useMemberOrders';
+import { canonicalGroupStage, CANONICAL_STAGE_META, type CanonicalGroupStage } from '../../src/utils/helpers';
 
 const PURPLE = '#7C3AED';
 const PINK = '#F43F5E';
@@ -42,55 +43,87 @@ const STATUS_CONFIG: Record<Exclude<CellStatus, 'empty'>, { label: string; color
 
 const MOCK_NAMES = ['星月', '七七', '小鹿', '柚子', '棉花糖', '阿澈', '夏目', '初雪', '泡芙', '栗子', '团子', '桃酥', '柠檬', '芋圆', '布丁'];
 
-// —— 生成 mock 矩阵数据 ——
-// 假设 5 个 SKU 列、每列 8 行
-// 状态分布(便于 demo 同时展示 6 种状态):
-//   第 0 行(假定团长已经发起收款): pending / finalPending / paid / shipped
-//   第 1 行(假定已发货): paid / shipped / received
-//   其余行(凑车阶段): 大量 gathering + 少量空位
-function buildMockMatrix(cols: number, rows: number, gridSeed: string): MatrixCell[][] {
-  const grid: MatrixCell[][] = [];
-  let nameIdx = 0;
-  const seed = gridSeed.length;
-  for (let c = 0; c < cols; c++) {
-    const col: MatrixCell[] = [];
-    for (let r = 0; r < rows; r++) {
-      const v = (seed + c * 13 + r * 7) % 17;
-      let status: CellStatus;
-      if (r === 0) {
-        // 第一辆车:演示已发起收款的状态
-        if (v <= 2) status = 'shipped';
-        else if (v <= 5) status = 'paid';
-        else if (v <= 8) status = 'finalPending';
-        else status = 'pending';
-      } else if (r === 1) {
-        // 第二辆车:演示发货后的状态
-        if (v <= 2) status = 'empty';
-        else if (v <= 5) status = 'received';
-        else if (v <= 9) status = 'shipped';
-        else if (v <= 12) status = 'paid';
-        else status = 'finalPending';
-      } else {
-        // 其余行:多为成团中(凑车阶段)
-        if (v <= 10) status = 'empty';
-        else status = 'gathering';
-      }
+// —— 团 canonical stage → 满行的格子状态(整团一个状态,所有满行统一) ——
+// 团跑到哪个阶段,所有已成团的整行都同步显示该阶段对应的订单状态:
+//   凑车中(gathering)        → 成团中
+//   收定金(deposit_collecting) → 待支付
+//   收尾款(final_collecting)   → 待付尾款
+//   发货中(shipping)            → 待发货(团长进入逐单填运单 / 一旦标记发货格子才会变 shipped)
+//   已截团(closed)              → 已完成
+function stageToFullRowCellStatus(canon: CanonicalGroupStage): Exclude<CellStatus, 'empty'> {
+  switch (canon) {
+    case 'gathering':           return 'gathering';
+    case 'deposit_collecting':  return 'pending';
+    case 'final_collecting':    return 'finalPending';
+    case 'shipping':            return 'paid';
+    case 'closed':              return 'received';
+    default:                    return 'gathering';
+  }
+}
 
-      if (status === 'empty') {
-        col.push({ status });
-      } else {
-        const name = MOCK_NAMES[(nameIdx++) % MOCK_NAMES.length];
-        col.push({
-          status,
-          memberName: name,
-          memberAvatar: name[0],
-          orderTime: 1716000000000 + (c * 1000 + r) * 60000,
-        });
-      }
+// —— 生成 mock 矩阵数据 ——
+// 严格"行优先 / 按下单时间顺序"连续填充:
+//   先把 #1 整行填满 → 再填 #2 → 再 #3 → ... 最后一个未满行从左到右连续填,
+//   后面的行整行留空。不会出现"#2 第 1 列空、第 4 列却已满"这种跳格情况。
+//
+// 状态映射规则(整团一个状态):
+//   满行  → 统一是 stageToFullRowCellStatus(group canonical stage)
+//   半行  → normalizeByRow 会统一改成「成团中(gathering)」
+//   空行  → 等下一波团员上车
+function buildMockMatrix(cols: number, rows: number, groupId: string, fullRowStatus: Exclude<CellStatus, 'empty'>): MatrixCell[][] {
+  const grid: MatrixCell[][] = [];
+  for (let c = 0; c < cols; c++) {
+    grid.push(Array.from({ length: rows }, () => ({ status: 'empty' as CellStatus })));
+  }
+  if (cols === 0 || rows === 0) return grid;
+
+  // seed 只用 groupId，保证同一个团所有 tab 生成一致的行数据
+  const seedNum = groupId.length;
+  const fullRows = Math.min(rows - 1, 3 + (seedNum % 2));
+  const partialRow = fullRows;
+  const partialFilled = cols <= 1
+    ? 0
+    : Math.max(1, Math.min(cols - 1, 1 + (seedNum * 3) % Math.max(1, cols - 1)));
+
+  let nameIdx = 0;
+  const baseTime = 1716000000000;
+
+  for (let r = 0; r < fullRows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const name = MOCK_NAMES[(nameIdx++) % MOCK_NAMES.length];
+      grid[c][r] = {
+        status: fullRowStatus,
+        memberName: name,
+        memberAvatar: name[0],
+        orderTime: baseTime + (r * cols + c) * 60000,
+      };
     }
-    grid.push(col);
+  }
+
+  if (partialRow < rows) {
+    for (let c = 0; c < partialFilled; c++) {
+      const name = MOCK_NAMES[(nameIdx++) % MOCK_NAMES.length];
+      grid[c][partialRow] = {
+        status: 'gathering',
+        memberName: name,
+        memberAvatar: name[0],
+        orderTime: baseTime + (partialRow * cols + c) * 60000,
+      };
+    }
   }
   return grid;
+}
+
+// —— 按"行优先"找下一个连续空位(用于团长占位 / 团员我的位置投影) ——
+function findNextEmptyCell(grid: MatrixCell[][]): { col: number; row: number } | null {
+  if (grid.length === 0) return null;
+  const rows = grid[0]?.length ?? 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < grid.length; c++) {
+      if (grid[c][r].status === 'empty') return { col: c, row: r };
+    }
+  }
+  return null;
 }
 
 // —— 判断某一行是否满行（所有列都非空） ——
@@ -103,24 +136,22 @@ function isRowFull(grid: MatrixCell[][], row: number): boolean {
 }
 
 // —— 行满才视为「已成团」 normalize ——
-// V1 demo 规则:
-// - 行未满 → 该行所有非空格子都是「成团中(gathering)」,等团长发起收款
-// - 行已满 → 保留 mock 的原状态(pending / finalPending / paid / shipped / received),
-//   体现"团长已经发起收款 / 已经发货 / 已经确认收货"等不同阶段
-function normalizeByRow(grid: MatrixCell[][]): MatrixCell[][] {
+// V1 demo 规则(整团一个状态):
+// - 行未满 → 该行所有非空格子统一显示「成团中(gathering)」,等团长发起收款
+// - 行已满 → 该行所有非空格子统一显示 fullRowStatus(来自团 canonical stage)
+function normalizeByRow(grid: MatrixCell[][], fullRowStatus: Exclude<CellStatus, 'empty'>): MatrixCell[][] {
   if (grid.length === 0) return grid;
   const rows = grid[0]?.length ?? 0;
   const next = grid.map((c) => c.slice());
   for (let r = 0; r < rows; r++) {
     const rowFull = isRowFull(next, r);
+    const targetStatus: Exclude<CellStatus, 'empty'> = rowFull ? fullRowStatus : 'gathering';
     for (let c = 0; c < next.length; c++) {
       const cell = next[c][r];
       if (cell.status === 'empty') continue;
-      if (!rowFull) {
-        // 行未满:所有非空格子统一显示「成团中」
-        if (cell.status !== 'gathering') next[c][r] = { ...cell, status: 'gathering' };
+      if (cell.status !== targetStatus) {
+        next[c][r] = { ...cell, status: targetStatus };
       }
-      // 行已满: 保留 mock 中的进阶状态
     }
   }
   return next;
@@ -184,53 +215,45 @@ export default function MatrixScreen() {
   const ROWS = 8;
   const COLS = columns.length;
 
+  // —— 团的 canonical stage(整团一个状态,矩阵满行全部跟着它) ——
+  const canon: CanonicalGroupStage = group ? canonicalGroupStage(group.stage) : 'gathering';
+  const fullRowStatus = stageToFullRowCellStatus(canon);
+  const canonMeta = CANONICAL_STAGE_META[canon];
+
   // —— 矩阵数据 ——
   const [grid, setGrid] = useState<MatrixCell[][]>([]);
   useEffect(() => {
-    const m = buildMockMatrix(COLS, ROWS, (group?.id ?? '') + activeTab);
+    const m = buildMockMatrix(COLS, ROWS, group?.id ?? '', fullRowStatus);
 
     if (isLeader) {
-      // 团长视角：在最后一列找一个空位或将一个非空格替换为"团长占位"
-      // 优先放空位（不破坏 mock），找不到再覆盖现有格
-      let placed = false;
-      const lastCol = m.length - 1;
-      if (lastCol >= 0) {
-        for (let r = 0; r < m[lastCol].length; r++) {
-          if (m[lastCol][r].status === 'empty') {
-            m[lastCol][r] = { status: 'gathering', memberName: '团长', memberAvatar: '团', orderTime: Date.now() };
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) {
-          m[lastCol][m[lastCol].length - 1] = { status: 'gathering', memberName: '团长', memberAvatar: '团', orderTime: Date.now() };
-        }
+      // 团长占位:按"时间顺序"放在矩阵的下一个连续空位(保持矩阵无空洞)
+      const pos = findNextEmptyCell(m);
+      if (pos) {
+        m[pos.col][pos.row] = {
+          status: 'gathering',
+          memberName: '团长',
+          memberAvatar: '团',
+          orderTime: Date.now(),
+        };
       }
-    } else {
-      // 团员视角：根据「下单件数」把头像填进第一辆车（row=0）的位置
-      // 没有下单 → 不强制填充；有下单 → 优先填空位，无空位则覆盖已有
-      if (myPlacedQty > 0) {
-        let remaining = Math.min(myPlacedQty, m.length);
-        let r = 0;
-        for (let c = 0; c < m.length && remaining > 0; c++) {
-          if (m[c][r].status === 'empty') {
-            m[c][r] = { status: 'gathering', memberName: '我', memberAvatar: '我', orderTime: Date.now() };
-            remaining--;
-          }
-        }
-        if (remaining > 0) {
-          for (let c = 0; c < m.length && remaining > 0; c++) {
-            if (m[c][r].memberName !== '我') {
-              m[c][r] = { status: 'gathering', memberName: '我', memberAvatar: '我', orderTime: Date.now() };
-              remaining--;
-            }
-          }
-        }
+    } else if (myPlacedQty > 0) {
+      // 团员视角:根据「下单件数」依次填到下一个连续空位(保持矩阵无空洞)
+      let remaining = Math.min(myPlacedQty, COLS * ROWS);
+      while (remaining > 0) {
+        const pos = findNextEmptyCell(m);
+        if (!pos) break;
+        m[pos.col][pos.row] = {
+          status: 'gathering',
+          memberName: '我',
+          memberAvatar: '我',
+          orderTime: Date.now(),
+        };
+        remaining--;
       }
     }
-    // 强制套用「行满才成团」规则
-    setGrid(normalizeByRow(m));
-  }, [COLS, ROWS, group?.id, activeTab, isLeader, myPlacedQty]);
+    // 强制套用「行满 → 团状态;半行 → 成团中」规则
+    setGrid(normalizeByRow(m, fullRowStatus));
+  }, [COLS, ROWS, group?.id, isLeader, myPlacedQty, fullRowStatus]);
 
   // —— 成团弹窗（手动分配凑齐一行时） ——
   const [completedRow, setCompletedRow] = useState<number | null>(null);
@@ -238,11 +261,9 @@ export default function MatrixScreen() {
   // —— 总进度 ——
   const matchedBoxes = calcMatchedBoxes(grid);
 
-  // —— 撤排模式（仅团长 · 单点踢人） ——
-  const [removeMode, setRemoveMode] = useState(false);
+  // —— 砍排模式下"砍个人"确认目标 ——
   const [confirmTarget, setConfirmTarget] = useState<{ col: number; row: number } | null>(null);
   const pulse = useRef(new Animated.Value(0)).current;
-  const removeBtnPulse = useRef(new Animated.Value(0)).current;
 
   // —— 砍排模式（仅团长 · 整行取消，常用于凑不齐的位置） ——
   const [chopMode, setChopMode] = useState(false);
@@ -252,8 +273,7 @@ export default function MatrixScreen() {
   // —— 一键收款 · 二次确认 Modal ——
   const [collectModalOpen, setCollectModalOpen] = useState(false);
 
-  // —— 📖 说明 Modal ——
-  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  // 📖 说明页 → /group/help
 
   // —— 手动分配模式（仅团长） ——
   const [assignMode, setAssignMode] = useState(false);
@@ -269,34 +289,26 @@ export default function MatrixScreen() {
   const [urgePaidVisible, setUrgePaidVisible] = useState(false);
   const [urgePaidCount, setUrgePaidCount] = useState(0);
 
-  // 模式切换时清空对方状态(三模式互斥)
-  const enterRemove = () => {
+  // 砍排模式(统一):点组号 = 砍整组,点个人头像 = 砍个人
+  const enterChop = () => {
     setAssignMode(false);
     setSelectedCell(null);
-    setChopMode(false);
-    setChopConfirmRow(null);
-    setRemoveMode((v) => !v);
+    setChopMode((v) => {
+      if (!v) { setConfirmTarget(null); setChopConfirmRow(null); }
+      return !v;
+    });
   };
   const enterAssign = () => {
-    setRemoveMode(false);
-    setConfirmTarget(null);
     setChopMode(false);
     setChopConfirmRow(null);
+    setConfirmTarget(null);
     setAssignMode((v) => !v);
     setSelectedCell(null);
   };
-  const enterChop = () => {
-    setRemoveMode(false);
-    setConfirmTarget(null);
-    setAssignMode(false);
-    setSelectedCell(null);
-    setChopMode((v) => !v);
-  };
 
   useEffect(() => {
-    if (!removeMode) {
+    if (!chopMode) {
       pulse.setValue(0);
-      removeBtnPulse.setValue(0);
       return;
     }
     Animated.loop(
@@ -305,17 +317,10 @@ export default function MatrixScreen() {
         Animated.timing(pulse, { toValue: 0, duration: 700, easing: Easing.in(Easing.quad), useNativeDriver: true }),
       ])
     ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(removeBtnPulse, { toValue: 1, duration: 800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(removeBtnPulse, { toValue: 0, duration: 800, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      ])
-    ).start();
-  }, [removeMode, pulse, removeBtnPulse]);
+  }, [chopMode, pulse]);
 
   const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });
   const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.5] });
-  const removeBtnDotOpacity = removeBtnPulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
 
   // —— 手动分配脉冲（选中格子时高亮） ——
   useEffect(() => {
@@ -378,25 +383,26 @@ export default function MatrixScreen() {
     Alert.alert(
       '已砍排',
       removedMembers.length === 0
-        ? `第 ${row + 1} 行已为空,无需砍排`
-        : `第 ${row + 1} 行所有订单已取消(${removedMembers.length} 位团员)\n${removedMembers.join('、')}\n\n已通知:「您所在的行未凑齐,本次未能成团,订单已取消」`,
+        ? `组${row + 1}已为空,无需砍排`
+        : `组${row + 1}所有订单已取消(${removedMembers.length} 位团员)\n${removedMembers.join('、')}\n\n已通知:「您所在的组未凑齐,本次未能成团,订单已取消」`,
     );
   };
 
-  // —— 触发撤排 / 砍排(仅团长) ——
+  // —— 触发砍排 / 手动分配(仅团长) ——
   const handleCellPress = (col: number, row: number) => {
     if (!isLeader) return;
-    // 砍排模式:点任意格子选中整行
+    const cell = grid[col]?.[row];
+
+    // —— 砍排模式:点个人头像 → 砍个人(弹确认) ——
     if (chopMode) {
-      handleRowChop(row);
+      if (!cell || cell.status === 'empty') return;
+      setConfirmTarget({ col, row });
       return;
     }
-    const cell = grid[col]?.[row];
 
     // —— 手动分配：点击两个格子即交换/移动位置 ——
     if (assignMode) {
       if (!cell) return;
-      // 第一次点击：必须点非空格子（要"被移动"的团员）
       if (!selectedCell) {
         if (cell.status === 'empty') {
           setAssignedHint('请先选中一个团员头像');
@@ -406,17 +412,14 @@ export default function MatrixScreen() {
         setSelectedCell({ col, row });
         return;
       }
-      // 第二次点击：交换或移动
       const { col: c1, row: r1 } = selectedCell;
       if (c1 === col && r1 === row) {
-        // 取消选中
         setSelectedCell(null);
         return;
       }
       const aName = grid[c1]?.[r1]?.memberName ?? '团员';
       const bCell = grid[col]?.[row];
 
-      // 先计算 swap + normalize 后的新 grid
       setGrid((prev) => {
         const next = prev.map((c) => c.slice());
         const a = next[c1][r1];
@@ -424,7 +427,6 @@ export default function MatrixScreen() {
         next[c1][r1] = b;
         next[col][row] = a;
 
-        // 检查"目标行 row"或"源行 r1"是否刚刚从未满 → 满
         const targetRowWasFull = isRowFull(prev, row);
         const sourceRowWasFull = isRowFull(prev, r1);
         const targetRowNowFull = isRowFull(next, row);
@@ -437,23 +439,17 @@ export default function MatrixScreen() {
         if (justFull !== null) {
           setCompletedRow(justFull);
         }
-        return normalizeByRow(next);
+        return normalizeByRow(next, fullRowStatus);
       });
 
       if (bCell?.status === 'empty') {
-        setAssignedHint(`已把 ${aName} 移到 #${row + 1} 位`);
+        setAssignedHint(`已把 ${aName} 移到 组${row + 1}`);
       } else {
         setAssignedHint(`已交换 ${aName} 与 ${bCell?.memberName ?? '团员'}`);
       }
       setSelectedCell(null);
       setTimeout(() => setAssignedHint(null), 1500);
       return;
-    }
-
-    // —— 撤排 ——
-    if (removeMode) {
-      if (!cell || cell.status === 'empty') return;
-      setConfirmTarget({ col, row });
     }
   };
 
@@ -469,151 +465,7 @@ export default function MatrixScreen() {
     Alert.alert('已撤排', `已通知 ${removed.memberName}：「您已被团长从『${group?.name ?? '本团'}』拼团中撤除」`);
   };
 
-  // —— 📖 排表说明 Modal · 抽成函数 / 团长 + 团员 + 自制团空态三处共用 ——
-  const renderHelpModal = () => (
-    <Modal visible={helpModalOpen} transparent animationType="fade" onRequestClose={() => setHelpModalOpen(false)}>
-      <Pressable style={modalS.overlay} onPress={() => setHelpModalOpen(false)}>
-        <Pressable style={helpS.card} onPress={(e) => e.stopPropagation()}>
-          <View style={helpS.header}>
-            <View style={[modalS.iconWrap, { backgroundColor: '#F5F3FF', width: 36, height: 36, borderRadius: 18, marginBottom: 0 }]}>
-              <Text style={{ fontSize: 18 }}>📖</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={helpS.title}>拼团情况 · 排表说明</Text>
-              <Text style={helpS.subTitle}>{isLeader ? '团长视角 · 含 4 个工具按钮详解' : '团员视角 · 看清自己所在的位置'}</Text>
-            </View>
-            <Pressable hitSlop={10} onPress={() => setHelpModalOpen(false)}>
-              <Ionicons name="close" size={22} color="#9CA3AF" />
-            </Pressable>
-          </View>
-
-          <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={helpS.body} showsVerticalScrollIndicator={false}>
-            <View style={helpS.section}>
-              <View style={helpS.sectionTitleRow}>
-                <Text style={helpS.sectionEmoji}>📐</Text>
-                <Text style={helpS.sectionTitle}>排表基础规则</Text>
-              </View>
-              <View style={helpS.bulletList}>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}><Text style={helpS.kw}>行</Text> = 上车位 1, 2, 3, ..., N(按团员下单时间顺序排)</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}><Text style={helpS.kw}>列</Text> = 每个 SKU(按调价系数从高到低排列,热门款在左)</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}><Text style={helpS.kw}>一行所有列都被占满</Text> = 凑齐 1 套 SKU = 已成团 1 盒</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>一行未满 → 该行所有非空格强制显示「成团中」,任何团员都不需要付款</Text></View>
-              </View>
-            </View>
-
-            <View style={helpS.section}>
-              <View style={helpS.sectionTitleRow}>
-                <Text style={helpS.sectionEmoji}>🎨</Text>
-                <Text style={helpS.sectionTitle}>6 种格子状态</Text>
-              </View>
-              <View style={helpS.statusGrid}>
-                {(['gathering', 'pending', 'finalPending', 'paid', 'shipped', 'received'] as const).map((st) => {
-                  const cfg = STATUS_CONFIG[st];
-                  return (
-                    <View key={st} style={[helpS.statusChip, { backgroundColor: cfg.bg, borderColor: cfg.color }]}>
-                      <View style={[helpS.statusDot, { backgroundColor: cfg.color }]} />
-                      <Text style={[helpS.statusLabel, { color: cfg.color }]}>{cfg.emoji} {cfg.label}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={helpS.statusFlow}>成团中 → 待支付 →(待付尾款)→ 待发货 → 待收货 → 已完成</Text>
-            </View>
-
-            {isLeader && (
-              <View style={helpS.section}>
-                <View style={helpS.sectionTitleRow}>
-                  <Text style={helpS.sectionEmoji}>🛠</Text>
-                  <Text style={helpS.sectionTitle}>团长工具栏 · 4 个工具</Text>
-                </View>
-
-                <View style={[helpS.toolCard, { borderColor: '#FCD34D', backgroundColor: '#FFFBEB' }]}>
-                  <View style={helpS.toolHead}>
-                    <Text style={helpS.toolIcon}>🪓</Text>
-                    <Text style={helpS.toolName}>砍排 — 整行取消订单</Text>
-                  </View>
-                  <Text style={helpS.toolDesc}>
-                    点击进入砍排模式 → 点 <Text style={helpS.kw}>#行号</Text> 或行内任意格子 → 二次确认 → 整行所有订单变空位 + 通知本行团员"未能成团"。
-                    {'\n'}<Text style={helpS.warn}>⚠️ 不可撤回 · 适合凑不齐永久缺货 SKU 的整行</Text>
-                  </Text>
-                </View>
-
-                <View style={[helpS.toolCard, { borderColor: '#FCA5A5', backgroundColor: '#FEF2F2' }]}>
-                  <View style={helpS.toolHead}>
-                    <Text style={helpS.toolIcon}>🚫</Text>
-                    <Text style={helpS.toolName}>撤排 — 单点踢人</Text>
-                  </View>
-                  <Text style={helpS.toolDesc}>
-                    点击进入撤排模式 → 点任意团员头像 → 必填理由(≥5 字)→ 二次确认 → 该格变空位 + 通知该团员"已被撤除"。
-                    {'\n'}适合处理跑团 / 恶意挂车 / 多次违规的团员,可一并加入团长黑名单。
-                  </Text>
-                </View>
-
-                <View style={[helpS.toolCard, { borderColor: '#C4B5FD', backgroundColor: '#F5F3FF' }]}>
-                  <View style={helpS.toolHead}>
-                    <Text style={helpS.toolIcon}>🧩</Text>
-                    <Text style={helpS.toolName}>手动分配 — 交换位置凑齐</Text>
-                  </View>
-                  <Text style={helpS.toolDesc}>
-                    点两个格子完成交换 / 移动 → 系统重新 normalize 行状态。
-                    {'\n'}若某行刚被凑满 → 自动弹「✅ 成团」,团长可直接对该行 <Text style={{ fontWeight: '800', color: PINK }}>一键收定金</Text>。
-                  </Text>
-                </View>
-
-                <View style={[helpS.toolCard, { borderColor: '#FBA4B8', backgroundColor: '#FFF1F2' }]}>
-                  <View style={helpS.toolHead}>
-                    <Text style={helpS.toolIcon}>📣</Text>
-                    <Text style={helpS.toolName}>一键收款 — 通知所有非空位</Text>
-                  </View>
-                  <Text style={helpS.toolDesc}>
-                    点击 → 二次确认 → 统计当前所有非空格子数 N → 推送付款通知 + 把团 stage 推进到对应收款阶段。
-                    {'\n'}<Text style={helpS.warn}>建议先用 🪓 砍排 / 🚫 撤排 清掉无效订单,再点本按钮</Text>
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {!isLeader && (
-              <View style={helpS.section}>
-                <View style={helpS.sectionTitleRow}>
-                  <Text style={helpS.sectionEmoji}>💡</Text>
-                  <Text style={helpS.sectionTitle}>团员看排表的小贴士</Text>
-                </View>
-                <View style={helpS.bulletList}>
-                  <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>点底部 <Text style={helpS.kw}>💡 我的位置</Text> → 紫色脉冲高亮自己在矩阵中的格子</Text></View>
-                  <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>所在行 <Text style={helpS.kw}>已凑齐</Text> → 等团长发起收款 / 推送付款通知</Text></View>
-                  <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>所在行 <Text style={helpS.kw}>未凑齐</Text> → 无需付款,可继续等其他团员上车</Text></View>
-                  <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>截团前可回团详情页 [✏️ 修改订单] 加购 / 改 SKU</Text></View>
-                  <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>团已切到"收款中"后 → 新下单会<Text style={helpS.kw}>自动唤起微信支付</Text></Text></View>
-                </View>
-              </View>
-            )}
-
-            <View style={helpS.section}>
-              <View style={helpS.sectionTitleRow}>
-                <Text style={helpS.sectionEmoji}>💚</Text>
-                <Text style={helpS.sectionTitle}>资金 / 收款规则</Text>
-              </View>
-              <View style={helpS.bulletList}>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}><Text style={helpS.kw}>付款时机</Text>由团长决定,不再"凑齐自动通知付款"</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>团员走 <Text style={helpS.kw}>微信支付</Text> → 资金进哈啰<Text style={helpS.kw}>平台托管账户</Text> · 0 手续费</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>定金团 · 定金团员付完即可提现;尾款必须等团员确认收货后才解锁</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>全款团 · 全款必须等团员确认收货后才解锁放款</Text></View>
-                <View style={helpS.bullet}><Text style={helpS.bulletDot}>•</Text><Text style={helpS.bulletText}>截团之前团员可继续下单 / 改单</Text></View>
-              </View>
-            </View>
-          </ScrollView>
-
-          <View style={helpS.footer}>
-            <Pressable style={[modalS.confirmBtn, { backgroundColor: PURPLE, flex: 1 }]} onPress={() => setHelpModalOpen(false)}>
-              <Ionicons name="checkmark" size={14} color="#FFF" />
-              <Text style={modalS.confirmText}>知道了</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
+  const goHelp = () => router.push('/group/help');
 
   if (!group) {
     return (
@@ -636,7 +488,7 @@ export default function MatrixScreen() {
             <Ionicons name="arrow-back" size={22} color="#1E1B4B" />
           </Pressable>
           <Text style={s.topTitle}>拼团情况</Text>
-          <Pressable hitSlop={10} onPress={() => setHelpModalOpen(true)}>
+          <Pressable hitSlop={10} onPress={goHelp}>
             <Ionicons name="help-circle-outline" size={20} color="#6B7280" />
           </Pressable>
         </View>
@@ -655,14 +507,11 @@ export default function MatrixScreen() {
           </Pressable>
           <Pressable
             style={[s.emptyBtn, { marginTop: 10, backgroundColor: '#F5F3FF', borderWidth: 1, borderColor: '#E9D5FF' }]}
-            onPress={() => setHelpModalOpen(true)}
+            onPress={goHelp}
           >
             <Text style={[s.emptyBtnText, { color: PURPLE }]}>📖 查看排表说明</Text>
           </Pressable>
         </View>
-
-        {/* —— 📖 排表说明 Modal(自制开团空态也保留入口) —— */}
-        {renderHelpModal()}
       </View>
     );
   }
@@ -675,7 +524,7 @@ export default function MatrixScreen() {
           <Ionicons name="arrow-back" size={22} color="#1E1B4B" />
         </Pressable>
         <Text style={s.topTitle}>拼团情况</Text>
-        <Pressable hitSlop={10} onPress={() => setHelpModalOpen(true)}>
+        <Pressable hitSlop={10} onPress={goHelp}>
           <Ionicons name="help-circle-outline" size={20} color="#6B7280" />
         </Pressable>
       </View>
@@ -690,26 +539,13 @@ export default function MatrixScreen() {
         <View style={s.summaryRow}>
           <View style={s.summaryItem}>
             <Text style={[s.summaryNum, { color: PINK }]}>{matchedBoxes}</Text>
-            <Text style={s.summaryLabel}>已成团盒数</Text>
+            <Text style={s.summaryLabel}>已参团人数</Text>
           </View>
           <View style={s.summaryDivider} />
           <View style={s.summaryItem}>
             <Text style={s.summaryNum}>72<Text style={s.summaryNumDim}>:14</Text></Text>
-            <Text style={s.summaryLabel}>剩余时间</Text>
+            <Text style={s.summaryLabel}>截止倒计时</Text>
           </View>
-        </View>
-
-        <View style={s.cutoffRow}>
-          <Ionicons name="time-outline" size={12} color="#6B7280" />
-          <Text style={s.cutoffText}>截团时间：2026-05-21 23:59</Text>
-        </View>
-
-        <View style={s.ruleHint}>
-          <Ionicons name="information-circle" size={11} color={PURPLE} />
-          <Text style={s.ruleHintText}>
-            <Text style={{ fontWeight: '800' }}>订单状态:成团中 → 待支付 → (待付尾款) → 待发货 → 待收货 → 已完成</Text>
-            {'\n'}付款时间由团长决定 · 截团前团员可继续下单 / 改单;到「收款中」后下单会自动唤起微信支付 · 团长点 <Text style={{ fontWeight: '800', color: PINK }}>📣 一键收款</Text> 后才通知团员付款
-          </Text>
         </View>
       </LinearGradient>
 
@@ -730,40 +566,21 @@ export default function MatrixScreen() {
         </ScrollView>
       </View>
 
-      {/* —— 团长:砍排模式提示横幅 —— */}
+      {/* —— 编辑模式提示横幅 —— */}
       {isLeader && chopMode && (
         <View style={[s.warnBanner, s.chopBanner]}>
           <Text style={{ fontSize: 14 }}>🪓</Text>
-          <Text style={[s.warnText, { color: '#92400E' }]}>砍排模式 · 点 #行号 或行内任意格子,即可取消该整行(再次弹窗确认 · 不可撤回)</Text>
-          <Pressable hitSlop={8} onPress={() => setChopMode(false)}>
-            <Ionicons name="close" size={14} color="#92400E" />
-          </Pressable>
+          <Text style={[s.warnText, { color: '#92400E' }]}>点 组号 = 砍整组 · 点 人头像 = 砍个人</Text>
         </View>
       )}
-
-      {/* —— 团长:撤排模式提示横幅 —— */}
-      {isLeader && removeMode && (
-        <View style={s.warnBanner}>
-          <Ionicons name="warning" size={14} color="#92400E" />
-          <Text style={s.warnText}>撤排模式 · 点击任意团员头像即可移除</Text>
-          <Pressable hitSlop={8} onPress={() => setRemoveMode(false)}>
-            <Ionicons name="close" size={14} color="#92400E" />
-          </Pressable>
-        </View>
-      )}
-
-      {/* —— 团长：手动分配模式提示横幅 —— */}
       {isLeader && assignMode && (
         <View style={[s.warnBanner, s.assignBanner]}>
-          <Ionicons name="move" size={14} color={PURPLE} />
+          <Ionicons name="swap-horizontal" size={14} color={PURPLE} />
           <Text style={[s.warnText, { color: PURPLE }]}>
             {selectedCell
-              ? `已选中 ${grid[selectedCell.col]?.[selectedCell.row]?.memberName ?? '团员'} · 再点一个格子完成交换/移动`
-              : '手动分配模式 · 先点一个团员头像，再点目标位置即可调整'}
+              ? `已选「${grid[selectedCell.col]?.[selectedCell.row]?.memberName ?? '团员'}」· 点目标位置完成移动`
+              : '点一个团员头像，再点目标位置即可调整'}
           </Text>
-          <Pressable hitSlop={8} onPress={() => { setAssignMode(false); setSelectedCell(null); }}>
-            <Ionicons name="close" size={14} color={PURPLE} />
-          </Pressable>
         </View>
       )}
 
@@ -799,7 +616,7 @@ export default function MatrixScreen() {
               {/* —— 列标题：SKU 名 + 调价系数 —— */}
               <View style={s.matrixHeaderRow}>
                 <View style={s.rowLabelCol}>
-                  <Text style={s.rowLabelCorner}>位 \ SKU</Text>
+                  <Text style={s.rowLabelCorner}>组 \ SKU</Text>
                 </View>
                 {columns.map((col) => (
                   <View key={col.id} style={s.colHeader}>
@@ -811,55 +628,62 @@ export default function MatrixScreen() {
                 ))}
               </View>
 
-              {/* —— 行 × 列 —— */}
-              {Array.from({ length: ROWS }).map((_, r) => (
-                <View key={r} style={s.matrixRow}>
-                  {isLeader && chopMode ? (
-                    <Pressable style={[s.rowLabelCol, s.rowLabelColChop]} onPress={() => handleRowChop(r)}>
-                      <Text style={[s.rowLabel, { color: '#D97706', fontWeight: '800' }]}>#{r + 1}</Text>
-                      <Text style={{ fontSize: 10 }}>🪓</Text>
-                    </Pressable>
-                  ) : (
-                    <View style={s.rowLabelCol}>
-                      <Text style={s.rowLabel}>#{r + 1}</Text>
-                    </View>
-                  )}
-                  {columns.map((col, c) => {
-                    const cell = grid[c]?.[r] ?? { status: 'empty' as const };
-                    const isMine = cell.memberName === '我';
-                    const isSelected = !!selectedCell && selectedCell.col === c && selectedCell.row === r;
-                    return (
-                      <View key={col.id} style={s.cellWrap}>
-                        <MatrixCellView
-                          cell={cell}
-                          isLeader={isLeader}
-                          removeMode={removeMode}
-                          assignMode={assignMode}
-                          chopMode={chopMode}
-                          chopHighlight={isLeader && chopMode}
-                          isSelected={isSelected}
-                          isMine={isMine}
-                          highlightMine={!isLeader && showMyPos && isMine}
-                          pulseScale={pulseScale}
-                          pulseOpacity={pulseOpacity}
-                          mineScale={mineScale}
-                          assignScale={assignScale}
-                          onPress={() => handleCellPress(c, r)}
-                        />
+              {/* —— 组 × 列（整组全空则不展示） —— */}
+              {Array.from({ length: ROWS }).map((_, r) => {
+                const rowEmpty = grid.every((col) => !col[r] || col[r].status === 'empty');
+                if (rowEmpty) return null;
+                return (
+                  <View key={r} style={s.matrixRow}>
+                    {isLeader && chopMode ? (
+                      <Pressable style={[s.rowLabelCol, s.rowLabelColChop]} onPress={() => handleRowChop(r)}>
+                        <Text style={[s.rowLabel, { color: '#D97706', fontWeight: '800' }]}>组{r + 1}</Text>
+                        <Text style={{ fontSize: 10 }}>🪓</Text>
+                      </Pressable>
+                    ) : (
+                      <View style={s.rowLabelCol}>
+                        <Text style={s.rowLabel}>组{r + 1}</Text>
                       </View>
-                    );
-                  })}
-                </View>
-              ))}
+                    )}
+                    {columns.map((col, c) => {
+                      const cell = grid[c]?.[r] ?? { status: 'empty' as const };
+                      const isMine = cell.memberName === '我';
+                      const isSelected = !!selectedCell && selectedCell.col === c && selectedCell.row === r;
+                      return (
+                        <View key={col.id} style={s.cellWrap}>
+                          <MatrixCellView
+                            cell={cell}
+                            isLeader={isLeader}
+                            assignMode={assignMode}
+                            chopMode={chopMode}
+                            chopHighlight={isLeader && chopMode}
+                            isSelected={isSelected}
+                            isMine={isMine}
+                            highlightMine={!isLeader && showMyPos && isMine}
+                            pulseScale={pulseScale}
+                            pulseOpacity={pulseOpacity}
+                            mineScale={mineScale}
+                            assignScale={assignScale}
+                            onPress={() => handleCellPress(c, r)}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
             </View>
           </ScrollView>
         )}
       </ScrollView>
 
-      {/* —— 图例 + 底部工具栏 —— */}
+      {/* —— 图例 + 底部工具栏 ——
+            图例只展示当前矩阵真实会出现的 cell status,跟团 canonical stage 同步 */}
       <View style={[s.toolbar, { paddingBottom: 8 + insets.bottom }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.legendRow}>
-          {(['gathering', 'pending', 'finalPending', 'paid', 'shipped', 'received'] as const).map((st) => {
+          {(canon === 'closed'
+            ? (['received'] as const)
+            : Array.from(new Set(['gathering', fullRowStatus] as const))
+          ).map((st) => {
             const cfg = STATUS_CONFIG[st];
             return (
               <View key={st} style={s.legendItem}>
@@ -872,55 +696,35 @@ export default function MatrixScreen() {
 
         {isLeader && (
           <View style={s.toolRow}>
-            {/* —— 团长专属:砍排(整行取消订单) —— */}
-            <Pressable
-              style={[s.toolBtn, chopMode && s.toolBtnActiveChop]}
-              onPress={enterChop}
-            >
-              <Text style={[s.toolBtnIcon, chopMode && { color: '#FFF' }]}>🪓</Text>
-              <Text style={[s.toolBtnText, chopMode && { color: '#FFF' }]}>{chopMode ? '退出砍排' : '砍排'}</Text>
-              {chopMode && (
-                <Animated.View style={[s.toolBtnDot, { opacity: chopBtnDotOpacity, backgroundColor: '#F59E0B' }]} />
-              )}
-            </Pressable>
-
-            {/* —— 团长专属:撤排 —— */}
-            <Pressable
-              style={[s.toolBtn, removeMode && s.toolBtnActive]}
-              onPress={enterRemove}
-            >
-              <Text style={[s.toolBtnIcon, removeMode && { color: '#FFF' }]}>🚫</Text>
-              <Text style={[s.toolBtnText, removeMode && { color: '#FFF' }]}>{removeMode ? '退出撤排' : '撤排'}</Text>
-              {removeMode && (
-                <Animated.View style={[s.toolBtnDot, { opacity: removeBtnDotOpacity }]} />
-              )}
-            </Pressable>
-
-            {/* —— 团长专属:手动分配 —— */}
-            <Pressable
-              style={[s.toolBtn, assignMode && s.toolBtnActiveAssign]}
-              onPress={enterAssign}
-            >
-              <Text style={[s.toolBtnIcon, assignMode && { color: '#FFF' }]}>🧩</Text>
-              <Text style={[s.toolBtnText, assignMode && { color: '#FFF' }]}>{assignMode ? '完成分配' : '手动分配'}</Text>
-            </Pressable>
-
-            {/* —— 团长专属:一键收款(取代旧"一键催款") —— */}
-            <Pressable
-              style={[s.toolBtn, s.toolBtnActivePay]}
-              onPress={() => setCollectModalOpen(true)}
-            >
-              <Text style={[s.toolBtnIcon, { color: '#FFF' }]}>📣</Text>
-              <Text style={[s.toolBtnText, { color: '#FFF' }]}>一键收款</Text>
-            </Pressable>
-
-            <Pressable
-              style={s.toolBtn}
-              onPress={() => setHelpModalOpen(true)}
-            >
-              <Text style={s.toolBtnIcon}>📖</Text>
-              <Text style={s.toolBtnText}>说明</Text>
-            </Pressable>
+            {(chopMode || assignMode) ? (
+              <>
+                <Pressable
+                  style={s.ctaBtnOutline}
+                  onPress={() => { setChopMode(false); setAssignMode(false); setSelectedCell(null); }}
+                >
+                  <Ionicons name="close-outline" size={18} color="#6B7280" />
+                  <Text style={s.ctaBtnOutlineText}>取消</Text>
+                </Pressable>
+                <Pressable
+                  style={s.ctaBtnSave}
+                  onPress={() => { setChopMode(false); setAssignMode(false); setSelectedCell(null); }}
+                >
+                  <Ionicons name="checkmark-outline" size={18} color="#FFF" />
+                  <Text style={s.ctaBtnSaveText}>保存</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable style={s.ctaBtnChop} onPress={enterChop}>
+                  <Text style={{ fontSize: 16 }}>🪓</Text>
+                  <Text style={s.ctaBtnChopText}>砍排</Text>
+                </Pressable>
+                <Pressable style={s.ctaBtnAssign} onPress={enterAssign}>
+                  <Text style={{ fontSize: 16 }}>🧩</Text>
+                  <Text style={s.ctaBtnAssignText}>调配</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -933,10 +737,10 @@ export default function MatrixScreen() {
               <Ionicons name="checkmark-circle" size={32} color="#10B981" />
             </View>
             <Text style={modalS.title}>
-              <Text style={{ color: '#10B981' }}>已凑满一行</Text> · 第 {(completedRow ?? 0) + 1} 行
+              <Text style={{ color: '#10B981' }}>已凑满一组</Text> · 组{(completedRow ?? 0) + 1}
             </Text>
             <Text style={modalS.sub}>
-              本行已凑齐 1 套 SKU,可立即向以下 {completedRow !== null
+              本组已凑齐 1 套 SKU,可立即向以下 {completedRow !== null
                 ? columns.filter((_, c) => grid[c]?.[completedRow]?.status !== 'empty').length
                 : 0} 位团员发起 <Text style={{ fontWeight: '800', color: PINK }}>一键收定金</Text>。
             </Text>
@@ -972,34 +776,38 @@ export default function MatrixScreen() {
         </Pressable>
       </Modal>
 
-      {/* —— 二次确认弹层 —— */}
+      {/* —— 砍个人:确认弹层 —— */}
       <Modal visible={!!confirmTarget} transparent animationType="fade" onRequestClose={() => setConfirmTarget(null)}>
         <Pressable style={modalS.overlay} onPress={() => setConfirmTarget(null)}>
           <Pressable style={modalS.card} onPress={(e) => e.stopPropagation()}>
-            <View style={modalS.iconWrap}>
-              <Ionicons name="warning" size={28} color="#F59E0B" />
+            <View style={[modalS.iconWrap, { backgroundColor: '#FFFBEB' }]}>
+              <Text style={{ fontSize: 28 }}>🪓</Text>
             </View>
             <Text style={modalS.title}>
-              确认撤走 <Text style={{ color: PINK }}>{grid[confirmTarget?.col ?? 0]?.[confirmTarget?.row ?? 0]?.memberName ?? ''}</Text>?
+              砍个人 · <Text style={{ color: PINK }}>{grid[confirmTarget?.col ?? 0]?.[confirmTarget?.row ?? 0]?.memberName ?? ''}</Text>
             </Text>
             <Text style={modalS.sub}>
-              撤排后该位置变空 · 团员会收到 App 内通知{'\n'}
-              该团员可重新下单 / 申诉
+              该团员将从组{(confirmTarget?.row ?? 0) + 1}中移除{'\n'}
+              位置变空 · 团员会收到通知
             </Text>
+            <View style={modalS.warningBox}>
+              <Ionicons name="alert-circle" size={14} color="#F59E0B" />
+              <Text style={[modalS.warningText, { color: '#92400E' }]}>请确认已与该团员沟通</Text>
+            </View>
             <View style={modalS.btnRow}>
               <Pressable style={modalS.cancelBtn} onPress={() => setConfirmTarget(null)}>
                 <Text style={modalS.cancelText}>取消</Text>
               </Pressable>
-              <Pressable style={modalS.confirmBtn} onPress={handleConfirmRemove}>
-                <Ionicons name="trash" size={14} color="#FFF" />
-                <Text style={modalS.confirmText}>确认撤走</Text>
+              <Pressable style={[modalS.confirmBtn, { backgroundColor: '#DC2626' }]} onPress={handleConfirmRemove}>
+                <Text style={{ fontSize: 14 }}>🪓</Text>
+                <Text style={modalS.confirmText}>确认砍掉</Text>
               </Pressable>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
 
-      {/* —— 砍排二次确认弹层(整行取消订单) —— */}
+      {/* —— 砍整组:确认弹层 —— */}
       <Modal visible={chopConfirmRow !== null} transparent animationType="fade" onRequestClose={() => setChopConfirmRow(null)}>
         <Pressable style={modalS.overlay} onPress={() => setChopConfirmRow(null)}>
           <Pressable style={modalS.card} onPress={(e) => e.stopPropagation()}>
@@ -1007,7 +815,7 @@ export default function MatrixScreen() {
               <Text style={{ fontSize: 28 }}>🪓</Text>
             </View>
             <Text style={modalS.title}>
-              确认砍掉第 <Text style={{ color: '#F59E0B' }}>{(chopConfirmRow ?? 0) + 1}</Text> 行所有订单?
+              砍整组 · 组<Text style={{ color: '#F59E0B' }}>{(chopConfirmRow ?? 0) + 1}</Text>
             </Text>
             <Text style={modalS.sub}>
               {(() => {
@@ -1017,13 +825,13 @@ export default function MatrixScreen() {
                   .filter((cell) => cell && cell.status !== 'empty')
                   .map((cell: any) => cell.memberName);
                 return members.length === 0
-                  ? '本行为空,无需砍排'
-                  : `本行有 ${members.length} 位团员订单将被整体取消:\n${members.slice(0, 4).join('、')}${members.length > 4 ? ` 等 ${members.length} 人` : ''}\n\n团员会收到「本次未能成团,订单已取消」通知`;
+                  ? '本组为空,无需砍排'
+                  : `整组 ${members.length} 位团员订单将被取消:\n${members.slice(0, 4).join('、')}${members.length > 4 ? ` 等 ${members.length} 人` : ''}`;
               })()}
             </Text>
             <View style={modalS.warningBox}>
-              <Ionicons name="warning" size={14} color="#DC2626" />
-              <Text style={modalS.warningText}>⚠️ 砍掉后不可撤回 · 请谨慎操作</Text>
+              <Ionicons name="alert-circle" size={14} color="#DC2626" />
+              <Text style={modalS.warningText}>请确认已与组内团员沟通 · 砍掉后不可撤回</Text>
             </View>
             <View style={modalS.btnRow}>
               <Pressable style={modalS.cancelBtn} onPress={() => setChopConfirmRow(null)}>
@@ -1031,7 +839,7 @@ export default function MatrixScreen() {
               </Pressable>
               <Pressable style={[modalS.confirmBtn, { backgroundColor: '#DC2626' }]} onPress={handleConfirmChop}>
                 <Text style={{ fontSize: 14 }}>🪓</Text>
-                <Text style={modalS.confirmText}>确认砍掉</Text>
+                <Text style={modalS.confirmText}>确认砍掉整组</Text>
               </Pressable>
             </View>
           </Pressable>
@@ -1101,19 +909,17 @@ export default function MatrixScreen() {
         </Pressable>
       </Modal>
 
-      {/* —— 📖 排表说明 Modal —— */}
-      {renderHelpModal()}
+      {/* 📖 排表说明 · 已改为独立 /group/help 页面 */}
     </View>
   );
 }
 
 /* —————— 单元格视图 —————— */
 function MatrixCellView({
-  cell, isLeader, removeMode, assignMode, chopMode, chopHighlight, isSelected, isMine, highlightMine, pulseScale, pulseOpacity, mineScale, assignScale, onPress,
+  cell, isLeader, assignMode, chopMode, chopHighlight, isSelected, isMine, highlightMine, pulseScale, pulseOpacity, mineScale, assignScale, onPress,
 }: {
   cell: MatrixCell;
   isLeader: boolean;
-  removeMode: boolean;
   assignMode: boolean;
   chopMode: boolean;
   chopHighlight: boolean;
@@ -1141,7 +947,7 @@ function MatrixCellView({
       return (
         <Pressable style={[cellS.empty, cellS.emptyChop]} onPress={onPress}>
           <Text style={{ fontSize: 14 }}>🪓</Text>
-          <Text style={[cellS.emptyText, { color: '#D97706', fontWeight: '700' }]}>砍整行</Text>
+          <Text style={[cellS.emptyText, { color: '#D97706', fontWeight: '700' }]}>砍整组</Text>
         </Pressable>
       );
     }
@@ -1178,21 +984,6 @@ function MatrixCellView({
         <Text style={cellS.avatarText}>{cell.memberAvatar}</Text>
       </View>
       <Text style={cellS.name} numberOfLines={1}>{cell.memberName}</Text>
-      <View style={[cellS.statusPill, { backgroundColor: isLeaderCell ? PURPLE : cfg.color }]}>
-        <Text style={cellS.statusPillText}>{isLeaderCell ? '团长占位' : cfg.label}</Text>
-      </View>
-
-      {/* 团长撤排模式 - 红色 ✗ 角标 */}
-      {isLeader && removeMode && (
-        <Animated.View
-          style={[
-            cellS.removeBadge,
-            { transform: [{ scale: pulseScale }], opacity: pulseOpacity },
-          ]}
-        >
-          <Ionicons name="close" size={10} color="#FFF" />
-        </Animated.View>
-      )}
 
       {/* 手动分配模式 - 紫色 ⇆ 角标 */}
       {isLeader && assignMode && !isSelected && (
@@ -1201,7 +992,7 @@ function MatrixCellView({
         </View>
       )}
 
-      {/* 砍排模式 - 橙色 🪓 角标 */}
+      {/* 砍排模式 - 橙色 🪓 角标(点人=砍个人) */}
       {isLeader && chopMode && (
         <Animated.View
           style={[
@@ -1221,7 +1012,7 @@ function MatrixCellView({
       )}
 
       {/* 团长视角下「我」（团长占位）的角标 */}
-      {isLeader && isLeaderCell && !assignMode && !removeMode && (
+      {isLeader && isLeaderCell && !assignMode && !chopMode && (
         <View style={[cellS.mineBadge, { backgroundColor: PURPLE }]}>
           <Text style={cellS.mineBadgeText}>长</Text>
         </View>
@@ -1262,7 +1053,7 @@ function MatrixCellView({
     <Pressable
       style={[cellS.cell, { backgroundColor: cfg.bg, borderColor: cfg.color }, memberMineStyle, chopHighlightStyle]}
       onPress={onPress}
-      disabled={!isLeader || (!removeMode && !assignMode && !chopMode)}
+      disabled={!isLeader || (!assignMode && !chopMode)}
     >
       {content}
     </Pressable>
@@ -1300,15 +1091,6 @@ const s = StyleSheet.create({
   summaryLabel: { fontSize: 10, color: '#6B7280', marginTop: 2, fontWeight: '600' },
   summaryDivider: { width: 1, height: 28, backgroundColor: '#E5E7EB' },
 
-  cutoffRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 10 },
-  cutoffText: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
-
-  ruleHint: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 4,
-    marginTop: 10, paddingHorizontal: 10, paddingVertical: 7,
-    backgroundColor: 'rgba(124,58,237,0.08)', borderRadius: 10,
-  },
-  ruleHintText: { flex: 1, fontSize: 10.5, color: PURPLE, lineHeight: 15 },
 
   // —— 子分组 Tab ——
   tabWrap: {
@@ -1389,39 +1171,40 @@ const s = StyleSheet.create({
   legendText: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
 
   toolRow: {
-    flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
-    paddingTop: 4,
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    paddingTop: 8, paddingHorizontal: 16, gap: 12,
   },
-  toolBtn: {
-    flexDirection: 'column', alignItems: 'center', gap: 2,
-    paddingHorizontal: 8, paddingVertical: 6,
-    borderRadius: 14,
-    minWidth: 60,
-    backgroundColor: '#F8F8FC',
-    position: 'relative',
+
+  ctaBtnChop: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5, borderColor: '#FDBA74',
   },
-  toolBtnActive: {
-    backgroundColor: '#F59E0B',
+  ctaBtnChopText: { fontSize: 15, fontWeight: '800', color: '#C2410C' },
+
+  ctaBtnAssign: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1.5, borderColor: '#C4B5FD',
   },
-  toolBtnActiveAssign: {
+  ctaBtnAssignText: { fontSize: 15, fontWeight: '800', color: PURPLE },
+
+  ctaBtnOutline: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5, borderColor: '#D1D5DB',
+  },
+  ctaBtnOutlineText: { fontSize: 15, fontWeight: '700', color: '#6B7280' },
+
+  ctaBtnSave: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 14, borderRadius: 14,
     backgroundColor: PURPLE,
   },
-  toolBtnActiveMine: {
-    backgroundColor: PURPLE,
-  },
-  toolBtnActiveChop: {
-    backgroundColor: '#EA580C',
-  },
-  toolBtnActivePay: {
-    backgroundColor: PINK,
-  },
-  toolBtnIcon: { fontSize: 16, color: '#6B7280' },
-  toolBtnText: { fontSize: 10, fontWeight: '700', color: '#6B7280' },
-  toolBtnDot: {
-    position: 'absolute', top: 4, right: 4,
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: '#FCD34D',
-  },
+  ctaBtnSaveText: { fontSize: 15, fontWeight: '800', color: '#FFF' },
 });
 
 const cellS = StyleSheet.create({
@@ -1455,13 +1238,6 @@ const cellS = StyleSheet.create({
   statusPill: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 },
   statusPillText: { fontSize: 8, fontWeight: '700', color: '#FFF' },
 
-  removeBadge: {
-    position: 'absolute', top: -6, right: -6,
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: '#EF4444',
-    borderWidth: 2, borderColor: '#FFF',
-    alignItems: 'center', justifyContent: 'center',
-  },
   assignBadge: {
     position: 'absolute', top: -6, right: -6,
     width: 18, height: 18, borderRadius: 9,
@@ -1547,61 +1323,4 @@ const modalS = StyleSheet.create({
   memberName: { fontSize: 11, fontWeight: '700', color: '#065F46' },
 });
 
-const helpS = StyleSheet.create({
-  card: {
-    width: '100%', maxWidth: 360, maxHeight: '88%',
-    backgroundColor: '#FFF', borderRadius: 20,
-    overflow: 'hidden',
-  },
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB',
-  },
-  title: { fontSize: 15, fontWeight: '800', color: '#1E1B4B' },
-  subTitle: { fontSize: 11, color: '#6B7280', marginTop: 2 },
-  body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 12, gap: 14 },
-
-  section: { gap: 8 },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  sectionEmoji: { fontSize: 14 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#1E1B4B' },
-
-  bulletList: { gap: 6, paddingLeft: 2 },
-  bullet: { flexDirection: 'row', gap: 6 },
-  bulletDot: { fontSize: 12, color: '#7C3AED', fontWeight: '900', lineHeight: 18 },
-  bulletText: { fontSize: 12, color: '#374151', lineHeight: 18, flex: 1 },
-  kw: { fontWeight: '800', color: '#1E1B4B' },
-  warn: { fontWeight: '700', color: '#DC2626' },
-
-  statusGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
-  },
-  statusChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12,
-    borderWidth: 1,
-  },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusLabel: { fontSize: 11, fontWeight: '700' },
-  statusFlow: {
-    fontSize: 10, fontWeight: '700', color: '#6B7280',
-    marginTop: 4, textAlign: 'center',
-    paddingVertical: 6, backgroundColor: '#F9FAFB', borderRadius: 8,
-  },
-
-  toolCard: {
-    borderWidth: 1, borderRadius: 12,
-    paddingHorizontal: 10, paddingVertical: 8,
-    gap: 4,
-  },
-  toolHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  toolIcon: { fontSize: 14 },
-  toolName: { fontSize: 12, fontWeight: '800', color: '#1E1B4B' },
-  toolDesc: { fontSize: 11, color: '#374151', lineHeight: 17 },
-
-  footer: {
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB',
-  },
-});
+// helpS 已移除 · 说明内容迁移到 /group/help 独立页面

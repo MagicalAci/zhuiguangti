@@ -1,7 +1,12 @@
+import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useStore } from '../src/store/useStore';
 
 export default function RootLayout() {
+  const init = useStore((s) => s.initFromSupabase);
+  useEffect(() => { init(); }, [init]);
+
   return (
     <>
       <StatusBar style="dark" />
@@ -14,6 +19,7 @@ export default function RootLayout() {
         <Stack.Screen name="group/promo" />
         <Stack.Screen name="group/success" options={{ animation: 'fade' }} />
         <Stack.Screen name="group/matrix" />
+        <Stack.Screen name="group/help" />
         <Stack.Screen name="group/chat" />
         <Stack.Screen name="group/finance" options={{ headerShown: true, title: '收款对账', headerTintColor: '#1E1B4B' }} />
         <Stack.Screen name="group/shipping" options={{ headerShown: true, title: '发货管理', headerTintColor: '#1E1B4B' }} />

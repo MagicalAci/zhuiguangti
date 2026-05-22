@@ -5,6 +5,15 @@ import {
 } from '../types';
 import { generateId } from '../utils/helpers';
 import { mockGroups, mockOrders, mockPayments, mockBlacklist, mockMembers } from '../utils/mockData';
+import {
+  fetchAllGroups, fetchOrders, fetchMembers, fetchPayments, fetchBlacklist,
+  updateGroupStage as apiUpdateStage,
+  updateOrderStatus as apiUpdateOrderStatus,
+  insertGroup as apiInsertGroup,
+  insertOrder as apiInsertOrder,
+  insertPayment as apiInsertPayment,
+} from '../lib/api';
+import { supabase } from '../lib/supabase';
 
 interface AppState {
   groups: Group[];
@@ -14,6 +23,9 @@ interface AppState {
   members: Member[];
   notifications: Notification[];
 
+  loading: boolean;
+  initialized: boolean;
+  initFromSupabase: () => Promise<void>;
 
   addGroup: (g: Omit<Group, 'id' | 'createdAt' | 'updatedAt' | 'memberCount' | 'totalRevenue' | 'collectedAmount' | 'products' | 'bundleRules'> & { products?: Product[] }) => string;
   updateGroupStage: (groupId: string, stage: GroupStage) => void;
@@ -62,13 +74,33 @@ interface AppState {
 
 export const useStore = create<AppState>()(
     (set, get) => ({
+      // 初始用 mock 数据 fallback，initFromSupabase 成功后覆盖
       groups: mockGroups,
       orders: mockOrders,
       payments: mockPayments,
       blacklist: mockBlacklist,
       members: mockMembers,
       notifications: [],
+      loading: false,
+      initialized: false,
 
+      initFromSupabase: async () => {
+        if (get().initialized) return;
+        set({ loading: true });
+        try {
+          const [groups, orders, members, payments, blacklist] = await Promise.all([
+            fetchAllGroups(),
+            fetchOrders(),
+            fetchMembers(),
+            fetchPayments(),
+            fetchBlacklist(),
+          ]);
+          set({ groups, orders, members, payments, blacklist, initialized: true, loading: false });
+        } catch (e) {
+          console.warn('Supabase fetch failed, using mock data:', e);
+          set({ initialized: true, loading: false });
+        }
+      },
 
       addGroup: (g) => {
         const id = generateId();
@@ -76,6 +108,7 @@ export const useStore = create<AppState>()(
         set((s) => ({
           groups: [...s.groups, { ...g, id, products: g.products ?? [], bundleRules: [], memberCount: 0, totalRevenue: 0, collectedAmount: 0, createdAt: now, updatedAt: now }],
         }));
+        apiInsertGroup(g as any).catch(console.warn);
         return id;
       },
 
@@ -83,39 +116,53 @@ export const useStore = create<AppState>()(
         set((s) => ({
           groups: s.groups.map((g) => g.id === groupId ? { ...g, stage, updatedAt: Date.now() } : g),
         }));
+        apiUpdateStage(groupId, stage).catch(console.warn);
         const group = get().groups.find((g) => g.id === groupId);
         if (group) {
           get().addNotification({ targetUserId: '*', type: 'stage_update', title: '团进度更新', body: `「${group.name}」已进入新阶段`, groupId });
         }
       },
 
-      addProduct: (groupId, product) =>
+      addProduct: (groupId, product) => {
+        const pid = generateId();
+        const now = Date.now();
         set((s) => ({
           groups: s.groups.map((g) => g.id === groupId
-            ? { ...g, products: [...g.products, { ...product, id: generateId(), groupId, sold: 0, createdAt: Date.now() }], updatedAt: Date.now() }
+            ? { ...g, products: [...g.products, { ...product, id: pid, groupId, sold: 0, createdAt: now }], updatedAt: now }
             : g),
-        })),
+        }));
+        supabase.from('products').insert({
+          id: pid, group_id: groupId, name: product.name, price: product.price,
+          heat: product.heat, stock: product.stock, weight: product.weight, created_at: now,
+        }).then(null, console.warn);
+      },
 
-      removeProduct: (groupId, productId) =>
+      removeProduct: (groupId, productId) => {
         set((s) => ({
           groups: s.groups.map((g) => g.id === groupId
             ? { ...g, products: g.products.filter((p) => p.id !== productId), updatedAt: Date.now() }
             : g),
-        })),
+        }));
+        supabase.from('products').delete().eq('id', productId).then(null, console.warn);
+      },
 
-      updateProductStock: (groupId, productId, stock) =>
+      updateProductStock: (groupId, productId, stock) => {
         set((s) => ({
           groups: s.groups.map((g) => g.id === groupId
             ? { ...g, products: g.products.map((p) => p.id === productId ? { ...p, stock } : p), updatedAt: Date.now() }
             : g),
-        })),
+        }));
+        supabase.from('products').update({ stock }).eq('id', productId).then(null, console.warn);
+      },
 
-      updateProductPrice: (groupId, productId, price) =>
+      updateProductPrice: (groupId, productId, price) => {
         set((s) => ({
           groups: s.groups.map((g) => g.id === groupId
             ? { ...g, products: g.products.map((p) => p.id === productId ? { ...p, price } : p), updatedAt: Date.now() }
             : g),
-        })),
+        }));
+        supabase.from('products').update({ price }).eq('id', productId).then(null, console.warn);
+      },
 
       batchUpdateProductPrice: (groupId, multiplier) =>
         set((s) => ({
@@ -150,15 +197,19 @@ export const useStore = create<AppState>()(
         return id;
       },
 
-      updateOrderStatus: (orderId, status) =>
+      updateOrderStatus: (orderId, status) => {
         set((s) => ({
           orders: s.orders.map((o) => o.id === orderId ? { ...o, status, updatedAt: Date.now() } : o),
-        })),
+        }));
+        apiUpdateOrderStatus(orderId, status).catch(console.warn);
+      },
 
-      batchUpdateOrderStatus: (orderIds, status) =>
+      batchUpdateOrderStatus: (orderIds, status) => {
         set((s) => ({
           orders: s.orders.map((o) => orderIds.includes(o.id) ? { ...o, status, updatedAt: Date.now() } : o),
-        })),
+        }));
+        orderIds.forEach((oid) => apiUpdateOrderStatus(oid, status).catch(console.warn));
+      },
 
       addTrackingNumber: (orderId, tracking) =>
         set((s) => {
@@ -166,6 +217,11 @@ export const useStore = create<AppState>()(
           if (order) {
             get().addNotification({ targetUserId: order.memberId, type: 'shipped', title: '你的包裹已发出', body: `运单号 ${tracking}，注意查收`, orderId });
           }
+          supabase.from('orders').update({
+            tracking_numbers: [...(order?.trackingNumbers ?? []), tracking],
+            status: 'shipped',
+            updated_at: Date.now(),
+          }).eq('id', orderId).then(null, console.warn);
           return {
             orders: s.orders.map((o) => o.id === orderId
               ? { ...o, trackingNumbers: [...o.trackingNumbers, tracking], status: 'shipped' as const, updatedAt: Date.now() }
@@ -173,20 +229,27 @@ export const useStore = create<AppState>()(
           };
         }),
 
-      confirmPayment: (paymentId) =>
+      confirmPayment: (paymentId) => {
         set((s) => ({
           payments: s.payments.map((p) => p.id === paymentId ? { ...p, status: 'confirmed', confirmedAt: Date.now() } : p),
-        })),
+        }));
+        supabase.from('payments').update({ status: 'confirmed', confirmed_at: Date.now() }).eq('id', paymentId).then(null, console.warn);
+      },
 
-      rejectPayment: (paymentId) =>
+      rejectPayment: (paymentId) => {
         set((s) => ({
           payments: s.payments.map((p) => p.id === paymentId ? { ...p, status: 'rejected' } : p),
-        })),
+        }));
+        supabase.from('payments').update({ status: 'rejected' }).eq('id', paymentId).then(null, console.warn);
+      },
 
-      addPayment: (p) =>
+      addPayment: (p) => {
+        const id = generateId();
         set((s) => ({
-          payments: [...s.payments, { ...p, id: generateId(), createdAt: Date.now() }],
-        })),
+          payments: [...s.payments, { ...p, id, createdAt: Date.now() }],
+        }));
+        apiInsertPayment(p).catch(console.warn);
+      },
 
       addToBlacklist: (entry) =>
         set((s) => {

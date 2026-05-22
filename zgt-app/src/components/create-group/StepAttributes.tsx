@@ -21,7 +21,6 @@ export interface AttributesData {
   requireNote: boolean;
   noteDesc: string;
   autoCancelMin: boolean;
-  orderNotice: string;
   shippingMethod: string;
   shippingFee: string;
   allowEditAddress: boolean;
@@ -48,7 +47,6 @@ interface Props {
 
 const PURPLE = '#7C3AED';
 const CATEGORIES = ['谷子拼团', '韩娱拼团', '内娱拼团', '其他拼团'];
-const TYPES = ['自制', '代购', '拼车'];
 
 export default function StepAttributes({ data, setData }: Props) {
   const set = <K extends keyof AttributesData>(key: K, val: AttributesData[K]) =>
@@ -184,15 +182,6 @@ export default function StepAttributes({ data, setData }: Props) {
           </View>
         </Card>
 
-        <Card>
-          <Label text="类型" />
-          <View style={s.chipRow}>
-            {TYPES.map((t) => (
-              <Chip key={t} label={t} active={data.type === t} onPress={() => set('type', t)} />
-            ))}
-          </View>
-        </Card>
-
         {/* —— 支付方式（策划案 §2.2 页面 2 步骤 4） —— */}
         <Card>
           <Label text="支付方式" required />
@@ -200,11 +189,6 @@ export default function StepAttributes({ data, setData }: Props) {
             <Chip label="定金" active={data.payMode === 'deposit'} onPress={() => set('payMode', 'deposit')} icon="cash-outline" />
             <Chip label="全款" active={data.payMode === 'full'} onPress={() => set('payMode', 'full')} icon="card-outline" />
           </View>
-          <Text style={s.hint}>
-            {data.payMode === 'full'
-              ? '成团后通知付全款 · 团员扫码付全款 + 上传凭证 + 团长审核 → 待发货'
-              : '成团后先付定金，发货前再补尾款 · 超时未补尾款将自动剔除'}
-          </Text>
 
           {data.payMode === 'deposit' && (
             <View style={s.depositBody}>

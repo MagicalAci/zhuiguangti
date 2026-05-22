@@ -251,53 +251,7 @@ export default function MemberOngoingPage() {
         </Text>
       </LinearGradient>
 
-      {/* —— 拼团筛选 + 状态 Tab (全局模式才显示) —— */}
-      {!scopedGroupId && (
-        <>
-          <View style={s.filterBar}>
-            <Pressable
-              style={s.filterChip}
-              onPress={() => setGroupFilterOpen(true)}
-            >
-              <Ionicons name="people-outline" size={13} color={PURPLE} />
-              <Text style={s.filterChipText} numberOfLines={1}>
-                {groupFilter === 'all' ? '全部拼团' : groupFilter}
-              </Text>
-              <Ionicons name="chevron-down" size={12} color={PURPLE} />
-            </Pressable>
-            {groupFilter !== 'all' && (
-              <Pressable style={s.filterClear} onPress={() => setGroupFilter('all')} hitSlop={6}>
-                <Ionicons name="close-circle" size={14} color="#9CA3AF" />
-              </Pressable>
-            )}
-          </View>
-
-          <View style={s.subTabGrid}>
-            {([
-              { key: 'all',        label: '全部',     icon: undefined },
-              { key: 'gathering',  label: '成团中',   icon: '🧩' },
-              { key: 'payDeposit', label: '待付定金', icon: '💵' },
-              { key: 'payFull',    label: '待支付',   icon: '💳' },
-              { key: 'finalPay',   label: '待付尾款', icon: '💰' },
-              { key: 'shipFee',    label: '待补邮',   icon: '📦' },
-            ] as { key: Tab; label: string; icon?: string }[]).map((t) => {
-              const active = tab === t.key;
-              return (
-                <TouchableOpacity
-                  key={t.key}
-                  style={[s.subTab, active && s.subTabActive]}
-                  onPress={() => setTab(t.key)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[s.subTabText, active && s.subTabTextActive]}>
-                    {t.icon ? `${t.icon} ` : ''}{t.label} {counts[t.key]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </>
-      )}
+      {/* 拼团筛选 + 状态 Tab 已移除 · 直接展示全部订单 */}
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24 + insets.bottom }}>
         {/* 团阶段提示 · 仅 scopedGroup 模式 */}
