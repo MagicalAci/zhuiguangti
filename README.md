@@ -6,8 +6,10 @@
 
 | 环境 | 地址 |
 | --- | --- |
-| Web 预览 | _部署完成后回填_ |
-| Repo | https://github.com/MagicalAci/zhuiguangti |
+| Web 预览 | <https://zhuiguangti.vercel.app> |
+| Repo | <https://github.com/MagicalAci/zhuiguangti> |
+
+> 已通过 Vercel 部署 · 绑定 GitHub 仓库 · push `main` 自动重新部署。
 
 ## 📁 仓库结构
 
