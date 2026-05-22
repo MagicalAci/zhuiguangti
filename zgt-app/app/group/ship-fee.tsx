@@ -10,14 +10,14 @@ import { useStore } from '../../src/store/useStore';
 const PURPLE = '#7C3AED';
 
 const MOCK_MEMBERS = [
-  { id: 'm1', name: '小圆', avatar: '🐱', paid: true,  amount: 35 },
-  { id: 'm2', name: '阿杰', avatar: '🐶', paid: true,  amount: 42 },
-  { id: 'm3', name: '糖糖', avatar: '🐰', paid: false, amount: 28 },
-  { id: 'm4', name: '小鱼', avatar: '🐠', paid: true,  amount: 19 },
-  { id: 'm5', name: '星星', avatar: '⭐', paid: false, amount: 53 },
-  { id: 'm6', name: '大毛', avatar: '🐻', paid: true,  amount: 66 },
-  { id: 'm7', name: '可乐', avatar: '🥤', paid: false, amount: 15 },
-  { id: 'm8', name: '米粒', avatar: '🍚', paid: true,  amount: 38 },
+  { id: 'm1', name: '小圆', avatar: '🐱', paid: true,  amount: 35, items: 2, address: '上海 · 徐汇区' },
+  { id: 'm2', name: '阿杰', avatar: '🐶', paid: true,  amount: 42, items: 3, address: '北京 · 朝阳区' },
+  { id: 'm3', name: '糖糖', avatar: '🐰', paid: false, amount: 28, items: 1, address: '杭州 · 西湖区' },
+  { id: 'm4', name: '小鱼', avatar: '🐠', paid: true,  amount: 19, items: 1, address: '深圳 · 南山区' },
+  { id: 'm5', name: '星星', avatar: '⭐', paid: false, amount: 53, items: 4, address: '成都 · 锦江区' },
+  { id: 'm6', name: '大毛', avatar: '🐻', paid: true,  amount: 66, items: 5, address: '广州 · 天河区' },
+  { id: 'm7', name: '可乐', avatar: '🥤', paid: false, amount: 15, items: 1, address: '苏州 · 工业园区' },
+  { id: 'm8', name: '米粒', avatar: '🍚', paid: true,  amount: 38, items: 2, address: '南京 · 鼓楼区' },
 ];
 
 export default function ShipFeePage() {
@@ -141,9 +141,16 @@ export default function ShipFeePage() {
               <View style={s.memberAvatar}>
                 <Text style={s.memberAvatarText}>{m.avatar}</Text>
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.memberName}>{m.name}</Text>
-                <Text style={s.memberSub}>下单 ¥{m.amount}</Text>
+                <Text style={s.memberSub}>
+                  <Text style={s.memberSubStrong}>{m.items} 件</Text>
+                  <Text>  ·  ¥{m.amount}</Text>
+                </Text>
+                <View style={s.memberAddrRow}>
+                  <Ionicons name="location-outline" size={11} color="#9CA3AF" />
+                  <Text style={s.memberAddr} numberOfLines={1}>{m.address}</Text>
+                </View>
               </View>
               <View style={[s.paidBadge, { backgroundColor: m.paid ? '#ECFDF5' : '#FEF2F2' }]}>
                 <Text style={[s.paidText, { color: m.paid ? '#059669' : '#EF4444' }]}>
@@ -227,6 +234,9 @@ const s = StyleSheet.create({
   memberAvatarText: { fontSize: 18 },
   memberName: { fontSize: 14, fontWeight: '700', color: '#1E1B4B' },
   memberSub: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  memberSubStrong: { fontSize: 11, fontWeight: '700', color: '#4B5563' },
+  memberAddrRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  memberAddr: { fontSize: 11, color: '#9CA3AF', flexShrink: 1 },
   paidBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   paidText: { fontSize: 10, fontWeight: '700' },
 
