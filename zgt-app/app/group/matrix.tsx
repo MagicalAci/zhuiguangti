@@ -870,88 +870,59 @@ export default function MatrixScreen() {
           })}
         </ScrollView>
 
-        <View style={s.toolRow}>
-          {isLeader ? (
-            <>
-              {/* —— 团长专属:砍排(整行取消订单) —— */}
-              <Pressable
-                style={[s.toolBtn, chopMode && s.toolBtnActiveChop]}
-                onPress={enterChop}
-              >
-                <Text style={[s.toolBtnIcon, chopMode && { color: '#FFF' }]}>🪓</Text>
-                <Text style={[s.toolBtnText, chopMode && { color: '#FFF' }]}>{chopMode ? '退出砍排' : '砍排'}</Text>
-                {chopMode && (
-                  <Animated.View style={[s.toolBtnDot, { opacity: chopBtnDotOpacity, backgroundColor: '#F59E0B' }]} />
-                )}
-              </Pressable>
+        {isLeader && (
+          <View style={s.toolRow}>
+            {/* —— 团长专属:砍排(整行取消订单) —— */}
+            <Pressable
+              style={[s.toolBtn, chopMode && s.toolBtnActiveChop]}
+              onPress={enterChop}
+            >
+              <Text style={[s.toolBtnIcon, chopMode && { color: '#FFF' }]}>🪓</Text>
+              <Text style={[s.toolBtnText, chopMode && { color: '#FFF' }]}>{chopMode ? '退出砍排' : '砍排'}</Text>
+              {chopMode && (
+                <Animated.View style={[s.toolBtnDot, { opacity: chopBtnDotOpacity, backgroundColor: '#F59E0B' }]} />
+              )}
+            </Pressable>
 
-              {/* —— 团长专属:撤排 —— */}
-              <Pressable
-                style={[s.toolBtn, removeMode && s.toolBtnActive]}
-                onPress={enterRemove}
-              >
-                <Text style={[s.toolBtnIcon, removeMode && { color: '#FFF' }]}>🚫</Text>
-                <Text style={[s.toolBtnText, removeMode && { color: '#FFF' }]}>{removeMode ? '退出撤排' : '撤排'}</Text>
-                {removeMode && (
-                  <Animated.View style={[s.toolBtnDot, { opacity: removeBtnDotOpacity }]} />
-                )}
-              </Pressable>
+            {/* —— 团长专属:撤排 —— */}
+            <Pressable
+              style={[s.toolBtn, removeMode && s.toolBtnActive]}
+              onPress={enterRemove}
+            >
+              <Text style={[s.toolBtnIcon, removeMode && { color: '#FFF' }]}>🚫</Text>
+              <Text style={[s.toolBtnText, removeMode && { color: '#FFF' }]}>{removeMode ? '退出撤排' : '撤排'}</Text>
+              {removeMode && (
+                <Animated.View style={[s.toolBtnDot, { opacity: removeBtnDotOpacity }]} />
+              )}
+            </Pressable>
 
-              {/* —— 团长专属:手动分配 —— */}
-              <Pressable
-                style={[s.toolBtn, assignMode && s.toolBtnActiveAssign]}
-                onPress={enterAssign}
-              >
-                <Text style={[s.toolBtnIcon, assignMode && { color: '#FFF' }]}>🧩</Text>
-                <Text style={[s.toolBtnText, assignMode && { color: '#FFF' }]}>{assignMode ? '完成分配' : '手动分配'}</Text>
-              </Pressable>
+            {/* —— 团长专属:手动分配 —— */}
+            <Pressable
+              style={[s.toolBtn, assignMode && s.toolBtnActiveAssign]}
+              onPress={enterAssign}
+            >
+              <Text style={[s.toolBtnIcon, assignMode && { color: '#FFF' }]}>🧩</Text>
+              <Text style={[s.toolBtnText, assignMode && { color: '#FFF' }]}>{assignMode ? '完成分配' : '手动分配'}</Text>
+            </Pressable>
 
-              {/* —— 团长专属:一键收款(取代旧"一键催款") —— */}
-              <Pressable
-                style={[s.toolBtn, s.toolBtnActivePay]}
-                onPress={() => setCollectModalOpen(true)}
-              >
-                <Text style={[s.toolBtnIcon, { color: '#FFF' }]}>📣</Text>
-                <Text style={[s.toolBtnText, { color: '#FFF' }]}>一键收款</Text>
-              </Pressable>
+            {/* —— 团长专属:一键收款(取代旧"一键催款") —— */}
+            <Pressable
+              style={[s.toolBtn, s.toolBtnActivePay]}
+              onPress={() => setCollectModalOpen(true)}
+            >
+              <Text style={[s.toolBtnIcon, { color: '#FFF' }]}>📣</Text>
+              <Text style={[s.toolBtnText, { color: '#FFF' }]}>一键收款</Text>
+            </Pressable>
 
-              <Pressable
-                style={s.toolBtn}
-                onPress={() => setHelpModalOpen(true)}
-              >
-                <Text style={s.toolBtnIcon}>📖</Text>
-                <Text style={s.toolBtnText}>说明</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              {/* —— 团员专属：我的位置 —— */}
-              <Pressable
-                style={[s.toolBtn, showMyPos && s.toolBtnActiveMine]}
-                onPress={() => setShowMyPos((v) => !v)}
-              >
-                <Text style={[s.toolBtnIcon, showMyPos && { color: '#FFF' }]}>💡</Text>
-                <Text style={[s.toolBtnText, showMyPos && { color: '#FFF' }]}>{showMyPos ? '取消高亮' : '我的位置'}</Text>
-              </Pressable>
-
-              <Pressable
-                style={s.toolBtn}
-                onPress={() => Alert.alert('余量图', '看看自己想要的 SKU 还剩几个空位（V1 后续完善）')}
-              >
-                <Text style={s.toolBtnIcon}>📊</Text>
-                <Text style={s.toolBtnText}>余量图</Text>
-              </Pressable>
-
-              <Pressable
-                style={s.toolBtn}
-                onPress={() => setHelpModalOpen(true)}
-              >
-                <Text style={s.toolBtnIcon}>📖</Text>
-                <Text style={s.toolBtnText}>说明</Text>
-              </Pressable>
-            </>
-          )}
-        </View>
+            <Pressable
+              style={s.toolBtn}
+              onPress={() => setHelpModalOpen(true)}
+            >
+              <Text style={s.toolBtnIcon}>📖</Text>
+              <Text style={s.toolBtnText}>说明</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {/* —— 成团弹窗（手动分配凑齐一行触发） —— */}
