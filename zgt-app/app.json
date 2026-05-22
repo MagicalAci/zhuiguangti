@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "追光体",
+    "slug": "zgt-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "zgt",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6C5CE7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.zgt.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#6C5CE7"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.zgt.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ]
+  }
+}
