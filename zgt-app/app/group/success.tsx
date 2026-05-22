@@ -14,12 +14,11 @@ export default function CreateSuccessScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { name, groupId } = useLocalSearchParams<{ name?: string; groupId?: string }>();
-  const groupName = name || '你的拼团';
   const gid = groupId || 'g1';
 
   // —— 模拟数据 ——
   const shortLink = `https://zgt.app/g/${gid}`;
-  const qrSeed = gid + groupName;
+  const qrSeed = gid + (name || 'g');
 
   const [shareSheetOpen, setShareSheetOpen] = useState(false);
   const [savedTip, setSavedTip] = useState(false);
@@ -77,14 +76,9 @@ export default function CreateSuccessScreen() {
           </Animated.View>
           <Text style={s.h1}>你的拼团已发布！</Text>
           <Text style={s.h1Sub}>已自动添加到「我发起的」</Text>
-
-          <View style={s.nameTag}>
-            <Ionicons name="rocket" size={12} color={PURPLE} />
-            <Text style={s.nameTagText}>{groupName}</Text>
-          </View>
         </View>
 
-        {/* —— 二维码 + 短链 —— */}
+        {/* —— 二维码 —— */}
         <View style={s.qrCard}>
           <View style={s.qrImgWrap}>
             <FakeQR seed={qrSeed} />
@@ -93,17 +87,6 @@ export default function CreateSuccessScreen() {
             </View>
           </View>
           <Text style={s.qrHint}>用微信/QQ 扫一扫，把团分享给好友</Text>
-
-          <View style={s.linkRow}>
-            <Ionicons name="link-outline" size={14} color="#9CA3AF" />
-            <Text style={s.linkText} numberOfLines={1}>{shortLink}</Text>
-            <Pressable
-              style={s.copyBtn}
-              onPress={() => Alert.alert('已复制', `${shortLink} 已复制到剪贴板`)}
-            >
-              <Text style={s.copyBtnText}>复制</Text>
-            </Pressable>
-          </View>
         </View>
 
         {/* —— 操作按钮 —— */}
@@ -136,14 +119,6 @@ export default function CreateSuccessScreen() {
               <Ionicons name="chevron-forward" size={12} color={PURPLE} />
             </Pressable>
           </View>
-        </View>
-
-        {/* —— 平台保障提示 —— */}
-        <View style={[s.warnCard, { backgroundColor: '#ECFDF5' }]}>
-          <Ionicons name="shield-checkmark" size={14} color="#10B981" />
-          <Text style={[s.warnText, { color: '#047857' }]}>
-            已接入哈啰平台代收 · 团员付款进入平台托管 · 信任背书更强
-          </Text>
         </View>
       </ScrollView>
 
@@ -236,13 +211,6 @@ const s = StyleSheet.create({
   celebrateEmoji: { fontSize: 50 },
   h1: { fontSize: 22, fontWeight: '800', color: '#1E1B4B', letterSpacing: -0.3 },
   h1Sub: { fontSize: 12, color: '#9CA3AF', marginTop: 6 },
-  nameTag: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#F5F3FF', borderRadius: 12,
-    paddingHorizontal: 10, paddingVertical: 5,
-    marginTop: 12,
-  },
-  nameTagText: { fontSize: 12, fontWeight: '600', color: PURPLE, maxWidth: 240 },
 
   qrCard: {
     marginHorizontal: 24, marginTop: 16,
@@ -266,16 +234,6 @@ const s = StyleSheet.create({
   qrLogoText: { fontSize: 13, fontWeight: '800', color: '#FFF' },
   qrHint: { fontSize: 11, color: '#9CA3AF', marginTop: 12 },
 
-  linkRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#F8F8FC', borderRadius: 12,
-    paddingHorizontal: 12, paddingVertical: 8,
-    marginTop: 14, width: '100%',
-  },
-  linkText: { flex: 1, fontSize: 11, color: '#6B7280' },
-  copyBtn: { backgroundColor: PURPLE + '15', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  copyBtnText: { fontSize: 11, fontWeight: '700', color: PURPLE },
-
   actions: { paddingHorizontal: 24, marginTop: 18, gap: 10 },
   primaryBtn: { borderRadius: 24, overflow: 'hidden' },
   primaryBtnGradient: {
@@ -298,14 +256,6 @@ const s = StyleSheet.create({
   linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 16, paddingVertical: 10 },
   linkBtnText: { fontSize: 13, fontWeight: '600', color: PURPLE },
   linkDivider: { width: 1, height: 14, backgroundColor: '#E5E7EB' },
-
-  warnCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginHorizontal: 24, marginTop: 14,
-    backgroundColor: '#FFFBEB', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 9,
-  },
-  warnText: { flex: 1, fontSize: 11, color: '#92400E', lineHeight: 16 },
 
   toast: {
     position: 'absolute', top: '45%', alignSelf: 'center',
