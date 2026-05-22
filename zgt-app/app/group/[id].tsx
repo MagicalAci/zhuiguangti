@@ -1137,22 +1137,14 @@ function ProductTile({
           </View>
 
           {qty > 0 ? (
-            <View style={tileS.stepperWrap}>
-              {isLeader && (
-                <View style={tileS.placedTag}>
-                  <Ionicons name="checkmark-circle" size={9} color={PURPLE} />
-                  <Text style={tileS.placedTagText}>已占位 ×{qty}</Text>
-                </View>
-              )}
-              <View style={tileS.stepper}>
-                <Pressable style={tileS.stepBtn} onPress={onSub}>
-                  <Ionicons name="remove" size={14} color={PURPLE} />
-                </Pressable>
-                <Text style={tileS.stepQty}>{qty}</Text>
-                <Pressable style={tileS.stepBtn} onPress={onAdd}>
-                  <Ionicons name="add" size={14} color={PURPLE} />
-                </Pressable>
-              </View>
+            <View style={tileS.stepper}>
+              <Pressable style={tileS.stepBtn} onPress={onSub}>
+                <Ionicons name="remove" size={14} color={PURPLE} />
+              </Pressable>
+              <Text style={tileS.stepQty}>{qty}</Text>
+              <Pressable style={tileS.stepBtn} onPress={onAdd}>
+                <Ionicons name="add" size={14} color={PURPLE} />
+              </Pressable>
             </View>
           ) : (
             <Pressable style={tileS.buyBtn} onPress={onAdd}>
@@ -1552,15 +1544,6 @@ const tileS = StyleSheet.create({
     backgroundColor: PURPLE, borderRadius: 16,
   },
   buyBtnText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
-
-  stepperWrap: { alignItems: 'flex-end', gap: 3 },
-  placedTag: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#F5F3FF',
-    paddingHorizontal: 6, paddingVertical: 1,
-    borderRadius: 6,
-  },
-  placedTagText: { fontSize: 9, fontWeight: '700', color: PURPLE },
 
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F5F3FF', borderRadius: 16, paddingHorizontal: 4, paddingVertical: 2 },
   stepBtn: { width: 22, height: 22, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF' },
